@@ -1,0 +1,160 @@
+name: Hypermedia CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'build/**'
+      - 'ci/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hypermedia-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Static security guardrails
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+
+      - name: Prepare lint artifacts
+        run: mkdir -p ci-artifacts
+
+      - name: Validate workflow YAML syntax
+        run: |
+          set -o pipefail
+          bash scripts/ci/check-workflow-syntax.sh .github/workflows/hypermedia-ci.yml 2>&1 | tee ci-artifacts/workflow-syntax.log
+
+      - name: Prove forbidden-pattern fixtures fail closed
+        run: |
+          set -o pipefail
+          bash scripts/ci/self-test-security.sh 2>&1 | tee ci-artifacts/security-self-test.log
+
+      - name: Run repository static security checks
+        run: |
+          set -o pipefail
+          bash scripts/ci/check-security.sh 2>&1 | tee ci-artifacts/security-scan.log
+
+      - name: Upload lint logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: hypermedia-lint-${{ github.run_id }}
+          path: ci-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  unit:
+    name: ASDF compile and FiveAM unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+
+      - name: Prepare unit artifacts
+        run: mkdir -p ci-artifacts
+
+      - name: Install SBCL and bootstrap Quicklisp
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes sbcl curl ca-certificates
+          curl --fail --silent --show-error --location \
+            --output /tmp/quicklisp.lisp \
+            https://beta.quicklisp.org/quicklisp.lisp
+          echo '4a7a5c2aebe0716417047854267397e24a44d0cce096127411e9ce9ccfeb2c17  /tmp/quicklisp.lisp' | sha256sum --check -
+          sbcl --non-interactive \
+            --load /tmp/quicklisp.lisp \
+            --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
+
+      - name: Install declared Ultralisp distribution
+        run: |
+          set -euxo pipefail
+          sbcl --non-interactive \
+            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(ql-dist:install-dist "http://dist.ultralisp.org/" :prompt nil :replace t)'
+
+      - name: Resolve Hypermedia test dependencies
+        run: |
+          set -o pipefail
+          sbcl --non-interactive \
+            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(asdf:load-asd (truename "clog.asd"))' \
+            --eval '(ql:quickload :clog/hypermedia-tests)' \
+            2>&1 | tee ci-artifacts/dependency-resolution.log
+
+      - name: Compile secondary systems through ASDF
+        run: |
+          set -o pipefail
+          sbcl --non-interactive \
+            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(asdf:load-asd (truename "clog.asd"))' \
+            --eval '(asdf:load-system :clog/hypermedia)' \
+            --eval '(asdf:load-system :clog/live)' \
+            --eval '(asdf:load-system :clog/presentations2)' \
+            --eval '(asdf:load-system :clog/compat)' \
+            2>&1 | tee ci-artifacts/asdf-compile.log
+
+      - name: Run FiveAM regression suite
+        run: |
+          set -o pipefail
+          sbcl --non-interactive \
+            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(asdf:load-asd (truename "clog.asd"))' \
+            --eval '(asdf:test-system :clog/hypermedia-tests)' \
+            2>&1 | tee ci-artifacts/fiveam.log
+
+      - name: Upload unit logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: hypermedia-unit-${{ github.run_id }}
+          path: ci-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  report:
+    name: CI report gate
+    if: always()
+    needs:
+      - lint
+      - unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Write stage report
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo 'CLOG 3 Hypermedia CI stage report'
+            echo 'lint=${{ needs.lint.result }}'
+            echo 'unit=${{ needs.unit.result }}'
+          } | tee ci-artifacts/stage-report.txt
+          {
+            echo '## CLOG 3 Hypermedia CI'
+            echo
+            echo '- Static security guardrails: `${{ needs.lint.result }}`'
+            echo '- ASDF compile + FiveAM: `${{ needs.unit.result }}`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload stage report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: hypermedia-report-${{ github.run_id }}
+          path: ci-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce required stages
+        if: needs.lint.result != 'success' || needs.unit.result != 'success'
+        run: exit 1

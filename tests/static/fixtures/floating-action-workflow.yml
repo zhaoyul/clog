@@ -1,0 +1,7 @@
+name: forbidden floating action
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
