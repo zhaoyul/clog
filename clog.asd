@@ -126,7 +126,9 @@
                #:lack-middleware-csrf)
   :serial t
   :pathname "source/hypermedia/"
-  :components ((:file "packages")))
+  :components ((:file "packages")
+               (:file "conditions")
+               (:file "request")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -172,6 +174,10 @@
                (:file "runner")
                (:module "baseline"
                 :components ((:file "smoke")))
+               (:module "fixtures"
+                :components ((:file "request-env")))
+               (:module "hypermedia"
+                :components ((:file "request")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
