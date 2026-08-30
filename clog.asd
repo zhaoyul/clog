@@ -115,17 +115,64 @@
                (:file "panel-clog-builder-repl")
                (:file "panel-shell")))
 
+(asdf:defsystem #:clog/hypermedia
+  :description "Experimental CLOG 3 Hypermedia Runtime package boundary"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog
+               #:spinneret
+               #:yason
+               #:lack-middleware-session
+               #:lack-middleware-csrf)
+  :serial t
+  :pathname "source/hypermedia/"
+  :components ((:file "packages")))
+
+(asdf:defsystem #:clog/live
+  :description "Experimental CLOG 3 Live Runtime package boundary"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia
+               #:websocket-driver)
+  :serial t
+  :pathname "source/live/"
+  :components ((:file "packages")))
+
+(asdf:defsystem #:clog/presentations2
+  :description "Experimental CLOG Presentations 2 package boundary"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia)
+  :serial t
+  :pathname "source/presentations2/"
+  :components ((:file "packages")))
+
+(asdf:defsystem #:clog/compat
+  :description "Experimental CLOG Hypermedia compatibility package boundary"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia
+               #:clog/live)
+  :serial t
+  :pathname "source/compat/"
+  :components ((:file "packages")))
+
 (asdf:defsystem #:clog/hypermedia-tests
   :description "Regression tests for the CLOG 3 Hypermedia Runtime"
   :author "CLOG contributors"
   :license "BSD"
-  :depends-on (#:clog #:fiveam)
+  :depends-on (#:clog/hypermedia
+               #:clog/live
+               #:clog/compat
+               #:fiveam
+               #:plump)
   :serial t
   :pathname "tests/"
   :components ((:file "packages")
                (:file "runner")
                (:module "baseline"
-                :components ((:file "smoke"))))
+                :components ((:file "smoke")))
+               (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :clog-hypermedia-tests :run-all-tests)))
