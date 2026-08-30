@@ -114,3 +114,18 @@
                (:file "panel-project-directory")
                (:file "panel-clog-builder-repl")
                (:file "panel-shell")))
+
+(asdf:defsystem #:clog/hypermedia-tests
+  :description "Regression tests for the CLOG 3 Hypermedia Runtime"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog #:fiveam)
+  :serial t
+  :pathname "tests/"
+  :components ((:file "packages")
+               (:file "runner")
+               (:module "baseline"
+                :components ((:file "smoke"))))
+  :perform (asdf:test-op (operation system)
+             (declare (ignore operation system))
+             (uiop:symbol-call :clog-hypermedia-tests :run-all-tests)))
