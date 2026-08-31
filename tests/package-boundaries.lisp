@@ -23,7 +23,8 @@
       "configuration"
       "session"
       "assets"
-      "application")
+      "application"
+      "render")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
@@ -202,12 +203,30 @@
     "MAKE-HYPERMEDIA-CONFIGURATION")
   "Exact public application and middleware surface after HM-013.")
 
+(defparameter +rendering-api-export-snapshot+
+  '("ASSET"
+    "ASSET-DEFER-P"
+    "ASSET-ERROR"
+    "ASSET-ERROR-REASON"
+    "ASSET-INTEGRITY"
+    "ASSET-KEY"
+    "ASSET-MODULE-P"
+    "ASSET-NONCE-REQUIRED-P"
+    "ASSET-P"
+    "ASSET-TYPE"
+    "ASSET-URL"
+    "MAKE-ASSET"
+    "RENDER-ASSETS"
+    "RENDER-PAGE")
+  "Exact public deterministic asset and page-shell surface after HM-014.")
+
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
                 (copy-list +router-api-export-snapshot+)
-                (copy-list +application-api-export-snapshot+))
+                (copy-list +application-api-export-snapshot+)
+                (copy-list +rendering-api-export-snapshot+))
         #'string<)
-  "Exact combined public HTTP, router and application surface after HM-013.")
+  "Exact combined public HTTP, router, application and render surface after HM-014.")
 
 (defparameter +session-api-export-snapshot+
   '("CSRF-TOKEN-FOR"
@@ -217,18 +236,32 @@
   "Exact internal Lack adapter surface after HM-013.")
 
 (defparameter +render-api-export-snapshot+
-  '("MAKE-STATIC-ASSET-MIDDLEWARE"
+  '("ASSET"
+    "ASSET-DEFER-P"
+    "ASSET-ERROR"
+    "ASSET-ERROR-REASON"
+    "ASSET-INTEGRITY"
+    "ASSET-KEY"
+    "ASSET-MODULE-P"
+    "ASSET-NONCE-REQUIRED-P"
+    "ASSET-P"
+    "ASSET-TYPE"
+    "ASSET-URL"
+    "MAKE-ASSET"
+    "MAKE-STATIC-ASSET-MIDDLEWARE"
+    "RENDER-ASSETS"
+    "RENDER-PAGE"
     "STATIC-ASSET-ERROR"
     "STATIC-ASSET-ERROR-REASON"
     "STATIC-ASSET-ERROR-STATUS")
-  "Exact internal static asset surface after HM-013.")
+  "Exact internal static and HTML asset surface after HM-014.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-013.")
+  "Facade export snapshots after HM-014.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -240,7 +273,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-013.")
+  "Internal package export snapshots after HM-014.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

@@ -136,7 +136,8 @@
                (:file "configuration")
                (:file "session")
                (:file "assets")
-               (:file "application")))
+               (:file "application")
+               (:file "render")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -175,11 +176,14 @@
                #:clog/live
                #:clog/compat
                #:fiveam
-               #:plump)
+               #:plump
+               #:ironclad
+               #:trivial-mimes)
   :serial t
   :pathname "tests/"
   :components ((:file "packages")
                (:file "runner")
+               (:file "assets")
                (:module "baseline"
                 :components ((:file "smoke")))
                (:module "fixtures"
@@ -188,7 +192,8 @@
                 :components ((:file "request")
                              (:file "response")
                              (:file "router")
-                             (:file "application")))
+                             (:file "application")
+                             (:file "assets")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
