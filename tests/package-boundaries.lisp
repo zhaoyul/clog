@@ -12,8 +12,18 @@
       "spinneret"
       "yason"
       "lack-middleware-session"
-      "lack-middleware-csrf")
-     ("packages" "conditions" "request" "response" "router")
+      "lack-middleware-csrf"
+      "lack-util"
+      "lack-middleware-static")
+     ("packages"
+      "conditions"
+      "request"
+      "response"
+      "router"
+      "configuration"
+      "session"
+      "assets"
+      "application")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
@@ -145,30 +155,92 @@
     "ROUTING-ERROR-REASON")
   "Exact internal deterministic router surface after HM-012.")
 
+(defparameter +application-api-export-snapshot+
+  '("APPLICATION-COMPONENT-STORE"
+    "APPLICATION-CONFIGURATION"
+    "APPLICATION-EVENT-BUS"
+    "APPLICATION-HANDLER"
+    "APPLICATION-LAYOUT"
+    "APPLICATION-NAME"
+    "APPLICATION-ROUTER"
+    "AS-CLACK-APP"
+    "CONFIGURATION-ACCESS-LOG-HOOK"
+    "CONFIGURATION-ACTION-PREFIX"
+    "CONFIGURATION-ASSETS-MODE"
+    "CONFIGURATION-AUTHENTICATION-HOOK"
+    "CONFIGURATION-COMPONENT-TTL-SECONDS"
+    "CONFIGURATION-CSP-NONCE-GENERATOR"
+    "CONFIGURATION-CSRF-FORM-TOKEN"
+    "CONFIGURATION-CSRF-ONE-TIME-P"
+    "CONFIGURATION-CSRF-SESSION-KEY"
+    "CONFIGURATION-DEFAULT-SWAP"
+    "CONFIGURATION-DEVELOPMENT-CONDITION-HOOK"
+    "CONFIGURATION-DEVELOPMENT-P"
+    "CONFIGURATION-HTMX-VERSION"
+    "CONFIGURATION-MAX-COMPONENTS-PER-SESSION"
+    "CONFIGURATION-MAX-EFFECT-HEADER-BYTES"
+    "CONFIGURATION-MAX-PARTIALS-PER-RESPONSE"
+    "CONFIGURATION-REQUEST-BODY-LIMIT-BYTES"
+    "CONFIGURATION-REQUEST-ID-GENERATOR"
+    "CONFIGURATION-SESSION-KEEP-EMPTY-P"
+    "CONFIGURATION-SESSION-STATE"
+    "CONFIGURATION-SESSION-STORE"
+    "CONFIGURATION-SSE-PREFIX"
+    "CONFIGURATION-STATIC-PREFIX"
+    "CONFIGURATION-STATIC-ROOT"
+    "CONFIGURATION-STRICT-CSP-P"
+    "CONFIGURATION-WS-PREFIX"
+    "CSRF-TOKEN-FOR"
+    "HYPERMEDIA-APPLICATION"
+    "HYPERMEDIA-APPLICATION-ERROR"
+    "HYPERMEDIA-APPLICATION-ERROR-REASON"
+    "HYPERMEDIA-CONFIGURATION"
+    "HYPERMEDIA-CONFIGURATION-ERROR"
+    "HYPERMEDIA-CONFIGURATION-ERROR-REASON"
+    "MAKE-HYPERMEDIA-APP"
+    "MAKE-HYPERMEDIA-APPLICATION"
+    "MAKE-HYPERMEDIA-CONFIGURATION")
+  "Exact public application and middleware surface after HM-013.")
+
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
-                (copy-list +router-api-export-snapshot+))
+                (copy-list +router-api-export-snapshot+)
+                (copy-list +application-api-export-snapshot+))
         #'string<)
-  "Exact combined public HTTP and router surface after HM-012.")
+  "Exact combined public HTTP, router and application surface after HM-013.")
+
+(defparameter +session-api-export-snapshot+
+  '("CSRF-TOKEN-FOR"
+    "MAKE-CSRF-MIDDLEWARE"
+    "MAKE-REQUEST-BODY-LIMIT-MIDDLEWARE"
+    "MAKE-SESSION-MIDDLEWARE")
+  "Exact internal Lack adapter surface after HM-013.")
+
+(defparameter +render-api-export-snapshot+
+  '("MAKE-STATIC-ASSET-MIDDLEWARE"
+    "STATIC-ASSET-ERROR"
+    "STATIC-ASSET-ERROR-REASON"
+    "STATIC-ASSET-ERROR-STATUS")
+  "Exact internal static asset surface after HM-013.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-012.")
+  "Facade export snapshots after HM-013.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
     ("CLOG-ROUTER" ,+router-api-export-snapshot+)
     ("CLOG-COMPONENT" nil)
-    ("CLOG-RENDER" nil)
+    ("CLOG-RENDER" ,+render-api-export-snapshot+)
     ("CLOG-HTMX" nil)
-    ("CLOG-SESSION" nil)
+    ("CLOG-SESSION" ,+session-api-export-snapshot+)
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-012.")
+  "Internal package export snapshots after HM-013.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

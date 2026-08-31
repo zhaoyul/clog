@@ -91,7 +91,7 @@
                (:file "clog-builder-ace")
                (:file "clog-builder-templates")
                (:file "clog-builder-projects")
-               (:file "clog-builder-asdf-browser")               
+               (:file "clog-builder-asdf-browser")
                (:file "clog-builder-sys-browser")
                (:file "clog-builder-project-tree")
                (:file "clog-builder-dir-tree")
@@ -123,14 +123,20 @@
                #:spinneret
                #:yason
                #:lack-middleware-session
-               #:lack-middleware-csrf)
+               #:lack-middleware-csrf
+               #:lack-util
+               #:lack-middleware-static)
   :serial t
   :pathname "source/hypermedia/"
   :components ((:file "packages")
                (:file "conditions")
                (:file "request")
                (:file "response")
-               (:file "router")))
+               (:file "router")
+               (:file "configuration")
+               (:file "session")
+               (:file "assets")
+               (:file "application")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -181,7 +187,8 @@
                (:module "hypermedia"
                 :components ((:file "request")
                              (:file "response")
-                             (:file "router")))
+                             (:file "router")
+                             (:file "application")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
