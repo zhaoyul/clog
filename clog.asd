@@ -121,6 +121,7 @@
   :license "BSD"
   :depends-on (#:clog
                #:spinneret
+               #:plump
                #:yason
                #:lack-middleware-session
                #:lack-middleware-csrf
@@ -200,7 +201,8 @@
                              (:file "assets")
                              (:file "component")
                              (:file "component-store")
-                             (:file "render")))
+                             (:file "render")
+                             (:file "root-contract")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))

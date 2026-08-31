@@ -10,6 +10,7 @@
   '(("clog/hypermedia"
      ("clog"
       "spinneret"
+      "plump"
       "yason"
       "lack-middleware-session"
       "lack-middleware-csrf"
@@ -223,6 +224,8 @@
     "ASSET-P"
     "ASSET-TYPE"
     "ASSET-URL"
+    "COMPONENT-DOM-ID"
+    "COMPONENT-ROOT-ATTRIBUTES"
     "CURRENT-RENDER-COMPONENT"
     "CURRENT-RENDER-CONTEXT"
     "CURRENT-RENDER-CSP-NONCE"
@@ -245,6 +248,8 @@
     "RENDER-CONTEXT-PRIMARY-COMPONENT-ID"
     "RENDER-CONTEXT-REQUEST"
     "RENDER-CONTEXT-TARGET"
+    "RENDER-CONTRACT-VIOLATION"
+    "RENDER-CONTRACT-VIOLATION-KIND"
     "RENDER-PAGE"
     "RENDER-PURITY-VIOLATION"
     "RENDER-PURITY-VIOLATION-KIND"
@@ -255,8 +260,9 @@
     "RENDERING-ERROR-REQUEST-ID"
     "TRUSTED-HTML"
     "TRUSTED-HTML-P"
-    "TRUSTED-HTML-STRING")
-  "Exact public asset, render-context and Spinneret surface after HM-022.")
+    "TRUSTED-HTML-STRING"
+    "VALIDATE-COMPONENT-ROOT")
+  "Exact public asset, render-context, root-contract and Spinneret surface after HM-023.")
 
 (defparameter +component-public-api-export-snapshot+
   '(
@@ -384,7 +390,7 @@
                 (copy-list +component-store-api-export-snapshot+)
                 (copy-list +session-integration-public-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-022.")
+  "Exact combined public Hypermedia facade surface after HM-023.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -410,6 +416,8 @@
     "ASSET-P"
     "ASSET-TYPE"
     "ASSET-URL"
+    "COMPONENT-DOM-ID"
+    "COMPONENT-ROOT-ATTRIBUTES"
     "CURRENT-RENDER-COMPONENT"
     "CURRENT-RENDER-CONTEXT"
     "CURRENT-RENDER-CSP-NONCE"
@@ -433,6 +441,8 @@
     "RENDER-CONTEXT-PRIMARY-COMPONENT-ID"
     "RENDER-CONTEXT-REQUEST"
     "RENDER-CONTEXT-TARGET"
+    "RENDER-CONTRACT-VIOLATION"
+    "RENDER-CONTRACT-VIOLATION-KIND"
     "RENDER-PAGE"
     "RENDER-PURITY-VIOLATION"
     "RENDER-PURITY-VIOLATION-KIND"
@@ -446,15 +456,16 @@
     "STATIC-ASSET-ERROR-STATUS"
     "TRUSTED-HTML"
     "TRUSTED-HTML-P"
-    "TRUSTED-HTML-STRING")
-  "Exact internal asset, render-context and Spinneret surface after HM-022.")
+    "TRUSTED-HTML-STRING"
+    "VALIDATE-COMPONENT-ROOT")
+  "Exact internal asset, render-context, root-contract and Spinneret surface after HM-023.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-022.")
+  "Facade export snapshots after HM-023.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -466,7 +477,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-022.")
+  "Internal package export snapshots after HM-023.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

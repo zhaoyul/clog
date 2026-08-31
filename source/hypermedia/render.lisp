@@ -3,17 +3,48 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defpackage #:clog-render
-  (:export #:render
+  (:export #:render-contract-violation
+           #:render-contract-violation-kind
+           #:component-dom-id
+           #:component-root-attributes
+           #:validate-component-root
+           #:render
            #:render-page))
 
 (defpackage #:clog-hypermedia
   (:import-from #:clog-render
+                #:render-contract-violation
+                #:render-contract-violation-kind
+                #:component-dom-id
+                #:component-root-attributes
+                #:validate-component-root
                 #:render
                 #:render-page)
-  (:export #:render
+  (:export #:render-contract-violation
+           #:render-contract-violation-kind
+           #:component-dom-id
+           #:component-root-attributes
+           #:validate-component-root
+           #:render
            #:render-page))
 
 (in-package #:clog-render)
+
+(define-condition render-contract-violation
+    (rendering-error clog-component:component-error)
+  ((kind
+    :initarg :kind
+    :reader render-contract-violation-kind))
+  (:report
+   (lambda (condition stream)
+     (format stream "Component root contract failed (~A)."
+             (render-contract-violation-kind condition))))
+  (:documentation
+   "A component fragment violated its stable single-root DOM contract.
+
+The default report exposes only a bounded reason keyword. Component and request
+correlation remain available through the inherited RENDERING-ERROR readers,
+while the fragment body and parser diagnostics stay out of normal reports."))
 
 (defparameter +vendored-htmx-version+ "4.0.0"
   "The only HTMX version authenticated and vendored by HM-003.")
@@ -272,6 +303,239 @@ conflict detection and de-duplication."
                :request-id request-id
                :cause cause))))
 
+(defparameter +component-root-reserved-attributes+
+  '("id" "data-clog-component" "data-clog-revision")
+  "Root attributes owned by the Hypermedia component contract.")
+
+(defun signal-render-contract-violation
+    (kind component context &key cause)
+  "Signal a redacted root-contract condition for COMPONENT and CONTEXT."
+  (multiple-value-bind (component-id request-id)
+      (render-component-correlation component context)
+    (error 'render-contract-violation
+           :reason :component-root-contract
+           :component-id component-id
+           :request-id request-id
+           :cause cause
+           :kind kind)))
+
+(defun component-dom-id (component)
+  "Return a fresh stable DOM id for COMPONENT.
+
+HM-023 deliberately uses the opaque component id as the root DOM id. The value
+contains no session, user or business key material and remains stable for the
+component lifetime."
+  (check-type component clog-component:component)
+  (clog-component:component-id component))
+
+(defun finite-even-plist-p (value)
+  "Return true when VALUE is a finite proper plist with an even length."
+  (handler-case
+      (let ((length (list-length value)))
+        (and (integerp length) (evenp length)))
+    (type-error () nil)))
+
+(defun root-attribute-name (attribute)
+  "Return ATTRIBUTE's lower-case HTML spelling, or NIL when unsupported."
+  (when (keywordp attribute)
+    (let ((name (string-downcase (symbol-name attribute))))
+      (when (and (plusp (length name))
+                 (every
+                  (lambda (character)
+                    (not (find character
+                               '(#\Space #\Tab #\Newline #\Return #\Page
+                                 #\/ #\> #\= #\< #\" #\')
+                               :test #'char=)))
+                  name))
+        name))))
+
+(defun safe-root-attribute-value-p (value)
+  "Return true for a deterministic Spinneret root-attribute value."
+  (or (null value)
+      (eq value t)
+      (keywordp value)
+      (numberp value)
+      (and (characterp value)
+           (render-scalar-character-p value)
+           (not (render-control-character-p value)))
+      (safe-render-string-p value :allow-empty t)))
+
+(defun copy-root-attribute-value (value)
+  "Defensively copy mutable root-attribute VALUE."
+  (if (stringp value) (copy-seq value) value))
+
+(defun validate-extra-root-attributes (attrs class component context)
+  "Validate ATTRS and return a fresh Spinneret-compatible plist."
+  (unless (finite-even-plist-p attrs)
+    (signal-render-contract-violation
+     :malformed-root-attributes component context))
+  (when (and class
+             (not (safe-render-string-p class :allow-empty t)))
+    (signal-render-contract-violation
+     :invalid-root-class component context))
+  (let ((seen (make-hash-table :test #'equal))
+        (result nil))
+    (when class
+      (setf (gethash "class" seen) t))
+    (loop for (attribute value) on attrs by #'cddr
+          for name = (root-attribute-name attribute)
+          do (unless name
+               (signal-render-contract-violation
+                :invalid-root-attribute-name component context))
+             (when (member name +component-root-reserved-attributes+
+                           :test #'string=)
+               (signal-render-contract-violation
+                :reserved-root-attribute component context))
+             (when (gethash name seen)
+               (signal-render-contract-violation
+                :duplicate-root-attribute component context))
+             (unless (safe-root-attribute-value-p value)
+               (signal-render-contract-violation
+                :invalid-root-attribute-value component context))
+             (setf (gethash name seen) t)
+             (setf result
+                   (nconc result
+                          (list attribute
+                                (copy-root-attribute-value value)))))
+    result))
+
+(defun component-root-attributes
+    (component context &key class (attrs nil))
+  "Return deterministic Spinneret attributes for COMPONENT's root element.
+
+The root id contains COMPONENT-DOM-ID. `data-clog-component` is the constant
+marker string `true`, and `data-clog-revision` contains the current committed
+decimal revision. CLASS and ATTRS are copied and appended after framework-owned
+metadata. ATTRS must be a finite keyword plist and cannot replace `id`, `data-clog-component` or
+`data-clog-revision`.
+
+Example:
+  (:section :attrs (component-root-attributes
+                    component context :class counter-class) ...)
+
+The helper performs no component mutation, registration, parsing or I/O."
+  (check-type component clog-component:component)
+  (check-type context render-context)
+  (let* ((dom-id (component-dom-id component))
+         (revision
+           (format nil "~D" (clog-component:component-revision component)))
+         (extra
+           (validate-extra-root-attributes attrs class component context)))
+    (append
+     (list :id (copy-seq dom-id)
+           :data-clog-component "true"
+           :data-clog-revision revision)
+     (when class (list :class (copy-seq class)))
+     extra)))
+
+(defun html-fragment-whitespace-p (value)
+  "Return true when VALUE contains only HTML fragment whitespace."
+  (and (stringp value)
+       (every
+        (lambda (character)
+          (find character
+                '(#\Space #\Tab #\Newline #\Return #\Page)
+                :test #'char=))
+        value)))
+
+(defun required-root-attribute
+    (root name missing-kind mismatch-kind expected component context)
+  "Validate one required ROOT attribute against EXPECTED."
+  (unless (plump:has-attribute root name)
+    (signal-render-contract-violation missing-kind component context))
+  (let ((actual (plump:get-attribute root name)))
+    (unless (and (stringp actual) (string= expected actual))
+      (signal-render-contract-violation mismatch-kind component context))))
+
+(defun validate-fragment-id-uniqueness (document component context)
+  "Reject empty or duplicate element ids in parsed DOCUMENT."
+  (let ((seen (make-hash-table :test #'equal)))
+    (plump:traverse
+     document
+     (lambda (node)
+       (when (plump:has-attribute node "id")
+         (let ((id (plump:get-attribute node "id")))
+           (unless (and (safe-render-string-p id)
+                        (<= (length id) 4096))
+             (signal-render-contract-violation
+              :invalid-element-id component context))
+           (when (gethash id seen)
+             (signal-render-contract-violation
+              :duplicate-element-id component context))
+           (setf (gethash (copy-seq id) seen) t))))
+     :test #'plump:element-p)))
+
+(defun validate-component-root (component context html)
+  "Validate and return COMPONENT's stable single-root HTML fragment.
+
+Validation uses Plump as an inert parser. Leading and trailing comments or
+whitespace are accepted, but the fragment must contain exactly one top-level
+element. That element must carry COMPONENT-DOM-ID in `id`, the constant marker `true`
+in `data-clog-component`, and the current decimal component revision in
+`data-clog-revision`. Empty or duplicate element ids are rejected.
+
+The parser does not execute script content. The returned string is a defensive
+copy, and root-contract conditions do not include the fragment body."
+  (check-type component clog-component:component)
+  (check-type context render-context)
+  (unless (safe-render-string-p html :allow-empty t)
+    (signal-render-contract-violation
+     :invalid-fragment-string component context))
+  (handler-case
+      (let* ((document (plump:parse html))
+             (roots nil))
+        (loop for node across (plump:children document)
+              do (cond
+                   ((plump:element-p node)
+                    (push node roots))
+                   ((plump:comment-p node) nil)
+                   ((plump:text-node-p node)
+                    (unless (html-fragment-whitespace-p (plump:text node))
+                      (signal-render-contract-violation
+                       :non-whitespace-root-text component context)))
+                   (t
+                    (signal-render-contract-violation
+                     :invalid-top-level-fragment-node component context))))
+        (setf roots (nreverse roots))
+        (cond
+          ((null roots)
+           (signal-render-contract-violation
+            :missing-root-element component context))
+          ((cdr roots)
+           (signal-render-contract-violation
+            :multiple-root-elements component context)))
+        (let* ((root (first roots))
+               (dom-id (component-dom-id component))
+               (revision
+                 (format nil "~D"
+                         (clog-component:component-revision component))))
+          (required-root-attribute
+           root "id" :missing-root-id :root-id-mismatch
+           dom-id component context)
+          (required-root-attribute
+           root "data-clog-component"
+           :missing-component-marker :component-marker-mismatch
+           "true" component context)
+          (required-root-attribute
+           root "data-clog-revision"
+           :missing-root-revision :root-revision-mismatch
+           revision component context))
+        (validate-fragment-id-uniqueness document component context)
+        (copy-seq html))
+    (render-contract-violation (condition)
+      (error condition))
+    (error (condition)
+      (signal-render-contract-violation
+       :malformed-fragment component context :cause condition))))
+
+(defun root-contract-validation-enabled-p (context)
+  "Return true when CONTEXT requests development or isolated test validation."
+  (or (eq :test (render-context-mode context))
+      (let ((application (render-context-application context)))
+        (and application
+             (clog-hypermedia:configuration-development-p
+              (clog-hypermedia:application-configuration application))))))
+
 (defun ensure-renderable-component (component context)
   "Reject inactive components before user rendering begins."
   (unless (clog-component:mounted-p component)
@@ -392,16 +656,23 @@ signals RENDER-PURITY-VIOLATION even when its own body also signaled an error."
 
 (defmethod clog-component:render-component :around
     ((component clog-component:component) (context render-context))
-  "Guard component rendering, bind context metadata and return validated HTML.
+  "Guard component rendering and enforce the development root contract.
 
 The concrete method may use SPINNERET:WITH-HTML-STRING or return TRUSTED-HTML.
-It must not mutate component revision or session registry membership."
-  (normalize-component-render-result
-   (with-component-purity-guard
-       (component context :component-render-failed)
-     (call-next-method))
-   component
-   context))
+It must not mutate component revision or session registry membership. Test and
+development contexts additionally receive the full inert Plump root validation.
+Production rendering avoids the full parse; component renderers still generate
+stable metadata through COMPONENT-ROOT-ATTRIBUTES."
+  (let ((html
+          (normalize-component-render-result
+           (with-component-purity-guard
+               (component context :component-render-failed)
+             (call-next-method))
+           component
+           context)))
+    (if (root-contract-validation-enabled-p context)
+        (validate-component-root component context html)
+        html)))
 
 (defun render (value context)
   "Render VALUE to a UTF-8 Common Lisp string using CONTEXT.
@@ -485,6 +756,7 @@ empty string. The function performs no response/network write."
        component
        context)))
   context)
+
 
 (defun validate-extra-page-assets (assets component context)
   "Return a fresh validated list of page-level ASSETS."
