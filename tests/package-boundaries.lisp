@@ -13,7 +13,7 @@
       "yason"
       "lack-middleware-session"
       "lack-middleware-csrf")
-     ("packages" "conditions" "request")
+     ("packages" "conditions" "request" "response")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
@@ -35,10 +35,11 @@
      ("CLOG-COMPAT")))
   "Current secondary ASDF system, dependency, component and package contracts.")
 
-(defparameter +request-api-export-snapshot+
+(defparameter +hypermedia-api-export-snapshot+
   '("CLOG-HYPERMEDIA-ERROR"
     "FORM-PARAM"
     "FORM-PARAM-VALUES"
+    "HTML-RESPONSE"
     "HTMX-FULL-REQUEST-P"
     "HTMX-PARTIAL-REQUEST-P"
     "HTMX-REQUEST-P"
@@ -46,10 +47,26 @@
     "HTMX-REQUEST-TARGET"
     "HTMX-REQUEST-TRIGGER"
     "HTMX-REQUEST-TYPE"
+    "INVALID-REDIRECT-URL"
+    "INVALID-REDIRECT-URL-REASON"
+    "INVALID-REDIRECT-URL-VALUE"
+    "INVALID-RESPONSE-BODY"
+    "INVALID-RESPONSE-BODY-VALUE"
+    "INVALID-RESPONSE-HEADER"
+    "INVALID-RESPONSE-HEADER-NAME"
+    "INVALID-RESPONSE-HEADER-VALUE"
+    "INVALID-RESPONSE-KIND"
+    "INVALID-RESPONSE-KIND-VALUE"
+    "INVALID-RESPONSE-STATUS"
+    "INVALID-RESPONSE-STATUS-VALUE"
     "MAKE-REQUEST-CONTEXT"
+    "MAKE-RESPONSE"
+    "NO-CONTENT-RESPONSE"
+    "NORMALIZE-RESPONSE"
     "PATH-PARAM"
     "QUERY-PARAM"
     "QUERY-PARAM-VALUES"
+    "REDIRECT-RESPONSE"
     "REQUEST-BODY-PARSE-CAUSE"
     "REQUEST-BODY-PARSE-CONTENT-TYPE"
     "REQUEST-BODY-PARSE-ERROR"
@@ -71,18 +88,31 @@
     "REQUEST-ROUTE"
     "REQUEST-SESSION"
     "REQUEST-SESSION-ID"
-    "REQUEST-USER")
-  "Exact public surface introduced by HM-010.")
+    "REQUEST-USER"
+    "RESPONSE"
+    "RESPONSE->CLACK-RESPONSE"
+    "RESPONSE-BODY"
+    "RESPONSE-CONTENT-LENGTH-ACTUAL"
+    "RESPONSE-CONTENT-LENGTH-EXPECTED"
+    "RESPONSE-CONTENT-LENGTH-MISMATCH"
+    "RESPONSE-ERROR"
+    "RESPONSE-ERROR-REASON"
+    "RESPONSE-HEADER"
+    "RESPONSE-HEADER-VALUES"
+    "RESPONSE-HEADERS"
+    "RESPONSE-KIND"
+    "RESPONSE-STATUS")
+  "Exact public HTTP surface after HM-010 and HM-011.")
 
 (defparameter +public-facade-export-contracts+
-  `(("CLOG-HYPERMEDIA" ,+request-api-export-snapshot+)
+  `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-010.")
+  "Facade export snapshots after HM-011.")
 
 (defparameter +internal-export-contracts+
-  `(("CLOG-HTTP" ,+request-api-export-snapshot+)
+  `(("CLOG-HTTP" ,+hypermedia-api-export-snapshot+)
     ("CLOG-ROUTER" nil)
     ("CLOG-COMPONENT" nil)
     ("CLOG-RENDER" nil)
@@ -91,7 +121,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-010.")
+  "Internal package export snapshots after HM-011.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

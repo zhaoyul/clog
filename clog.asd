@@ -128,7 +128,8 @@
   :pathname "source/hypermedia/"
   :components ((:file "packages")
                (:file "conditions")
-               (:file "request")))
+               (:file "request")
+               (:file "response")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -177,7 +178,8 @@
                (:module "fixtures"
                 :components ((:file "request-env")))
                (:module "hypermedia"
-                :components ((:file "request")))
+                :components ((:file "request")
+                             (:file "response")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
