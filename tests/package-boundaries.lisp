@@ -13,7 +13,7 @@
       "yason"
       "lack-middleware-session"
       "lack-middleware-csrf")
-     ("packages" "conditions" "request" "response")
+     ("packages" "conditions" "request" "response" "router")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
@@ -35,7 +35,7 @@
      ("CLOG-COMPAT")))
   "Current secondary ASDF system, dependency, component and package contracts.")
 
-(defparameter +hypermedia-api-export-snapshot+
+(defparameter +http-api-export-snapshot+
   '("CLOG-HYPERMEDIA-ERROR"
     "FORM-PARAM"
     "FORM-PARAM-VALUES"
@@ -102,18 +102,65 @@
     "RESPONSE-HEADERS"
     "RESPONSE-KIND"
     "RESPONSE-STATUS")
-  "Exact public HTTP surface after HM-010 and HM-011.")
+  "Exact internal HTTP adapter surface after HM-010 and HM-011.")
+
+(defparameter +router-api-export-snapshot+
+  '("ADD-ROUTE"
+    "DISPATCH-ROUTE"
+    "FIND-ROUTE"
+    "MAKE-ROUTER"
+    "METHOD-NOT-ALLOWED"
+    "METHOD-NOT-ALLOWED-ALLOWED-METHODS"
+    "METHOD-NOT-ALLOWED-METHOD"
+    "METHOD-NOT-ALLOWED-PATH"
+    "PATH-DECODING-ERROR"
+    "PATH-DECODING-ERROR-CAUSE"
+    "PATH-DECODING-ERROR-PARAMETER"
+    "PATH-DECODING-ERROR-PATH"
+    "ROUTE"
+    "ROUTE-CONFLICT"
+    "ROUTE-CONFLICT-EXISTING-TEMPLATE"
+    "ROUTE-CONFLICT-METHOD"
+    "ROUTE-CONFLICT-TEMPLATE"
+    "ROUTE-DEFINITION-ERROR"
+    "ROUTE-DEFINITION-VALUE"
+    "ROUTE-EXACT-P"
+    "ROUTE-HANDLER"
+    "ROUTE-HANDLER-ERROR"
+    "ROUTE-HANDLER-ERROR-CAUSE"
+    "ROUTE-HANDLER-ERROR-ROUTE"
+    "ROUTE-METADATA"
+    "ROUTE-METHOD"
+    "ROUTE-MIDDLEWARE"
+    "ROUTE-NAME"
+    "ROUTE-NOT-FOUND"
+    "ROUTE-NOT-FOUND-METHOD"
+    "ROUTE-NOT-FOUND-PATH"
+    "ROUTE-P"
+    "ROUTE-PARAMETER-NAMES"
+    "ROUTE-PATH"
+    "ROUTER"
+    "ROUTER-P"
+    "ROUTING-ERROR"
+    "ROUTING-ERROR-REASON")
+  "Exact internal deterministic router surface after HM-012.")
+
+(defparameter +hypermedia-api-export-snapshot+
+  (sort (append (copy-list +http-api-export-snapshot+)
+                (copy-list +router-api-export-snapshot+))
+        #'string<)
+  "Exact combined public HTTP and router surface after HM-012.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-011.")
+  "Facade export snapshots after HM-012.")
 
 (defparameter +internal-export-contracts+
-  `(("CLOG-HTTP" ,+hypermedia-api-export-snapshot+)
-    ("CLOG-ROUTER" nil)
+  `(("CLOG-HTTP" ,+http-api-export-snapshot+)
+    ("CLOG-ROUTER" ,+router-api-export-snapshot+)
     ("CLOG-COMPONENT" nil)
     ("CLOG-RENDER" nil)
     ("CLOG-HTMX" nil)
@@ -121,7 +168,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-011.")
+  "Internal package export snapshots after HM-012.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

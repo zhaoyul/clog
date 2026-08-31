@@ -129,7 +129,8 @@
   :components ((:file "packages")
                (:file "conditions")
                (:file "request")
-               (:file "response")))
+               (:file "response")
+               (:file "router")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -179,7 +180,8 @@
                 :components ((:file "request-env")))
                (:module "hypermedia"
                 :components ((:file "request")
-                             (:file "response")))
+                             (:file "response")
+                             (:file "router")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
