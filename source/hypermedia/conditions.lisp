@@ -265,3 +265,224 @@ headers can carry cookies, tokens or other sensitive material."))
       "Return the byte length computed from the response body.")
 (setf (documentation 'response-content-length-actual 'function)
       "Return the conflicting Content-Length supplied by response headers.")
+
+(defpackage #:clog-router
+  (:import-from #:clog-http
+                #:clog-hypermedia-error)
+  (:export #:routing-error
+           #:routing-error-reason
+           #:route-definition-error
+           #:route-definition-value
+           #:route-conflict
+           #:route-conflict-method
+           #:route-conflict-template
+           #:route-conflict-existing-template
+           #:route-not-found
+           #:route-not-found-method
+           #:route-not-found-path
+           #:method-not-allowed
+           #:method-not-allowed-method
+           #:method-not-allowed-path
+           #:method-not-allowed-allowed-methods
+           #:path-decoding-error
+           #:path-decoding-error-path
+           #:path-decoding-error-parameter
+           #:path-decoding-error-cause
+           #:route-handler-error
+           #:route-handler-error-route
+           #:route-handler-error-cause))
+
+(defpackage #:clog-hypermedia
+  (:import-from #:clog-router
+                #:routing-error
+                #:routing-error-reason
+                #:route-definition-error
+                #:route-definition-value
+                #:route-conflict
+                #:route-conflict-method
+                #:route-conflict-template
+                #:route-conflict-existing-template
+                #:route-not-found
+                #:route-not-found-method
+                #:route-not-found-path
+                #:method-not-allowed
+                #:method-not-allowed-method
+                #:method-not-allowed-path
+                #:method-not-allowed-allowed-methods
+                #:path-decoding-error
+                #:path-decoding-error-path
+                #:path-decoding-error-parameter
+                #:path-decoding-error-cause
+                #:route-handler-error
+                #:route-handler-error-route
+                #:route-handler-error-cause)
+  (:export #:routing-error
+           #:routing-error-reason
+           #:route-definition-error
+           #:route-definition-value
+           #:route-conflict
+           #:route-conflict-method
+           #:route-conflict-template
+           #:route-conflict-existing-template
+           #:route-not-found
+           #:route-not-found-method
+           #:route-not-found-path
+           #:method-not-allowed
+           #:method-not-allowed-method
+           #:method-not-allowed-path
+           #:method-not-allowed-allowed-methods
+           #:path-decoding-error
+           #:path-decoding-error-path
+           #:path-decoding-error-parameter
+           #:path-decoding-error-cause
+           #:route-handler-error
+           #:route-handler-error-route
+           #:route-handler-error-cause))
+
+(in-package #:clog-router)
+
+(define-condition routing-error (clog-http:clog-hypermedia-error)
+  ((reason
+    :initarg :reason
+    :initform nil
+    :reader routing-error-reason))
+  (:report
+   (lambda (condition stream)
+     (format stream "Hypermedia routing failed~@[ (~A)~]."
+             (routing-error-reason condition))))
+  (:documentation
+   "Base condition for route registration, lookup, decoding and dispatch failures."))
+
+(define-condition route-definition-error (routing-error)
+  ((value
+    :initarg :value
+    :initform nil
+    :reader route-definition-value))
+  (:report
+   (lambda (condition stream)
+     (format stream "Invalid route definition~@[ (~A)~]."
+             (routing-error-reason condition))))
+  (:documentation
+   "Signaled while an application registers a malformed route definition.
+
+The rejected value is retained for development diagnostics but is not printed
+by the condition report."))
+
+(define-condition route-conflict (route-definition-error)
+  ((method
+    :initarg :method
+    :reader route-conflict-method)
+   (template
+    :initarg :template
+    :reader route-conflict-template)
+   (existing-template
+    :initarg :existing-template
+    :reader route-conflict-existing-template))
+  (:report
+   (lambda (condition stream)
+     (format stream "Conflicting route registration for HTTP method ~A (~A)."
+             (route-conflict-method condition)
+             (routing-error-reason condition))))
+  (:documentation
+   "Signaled immediately when a new route overlaps an existing route for the same method or reuses a route name."))
+
+(define-condition route-not-found (routing-error)
+  ((method
+    :initarg :method
+    :reader route-not-found-method)
+   (path
+    :initarg :path
+    :reader route-not-found-path))
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (format stream "No Hypermedia route matched the request.")))
+  (:documentation
+   "Signaled when no route template matches a valid request method and path."))
+
+(define-condition method-not-allowed (routing-error)
+  ((method
+    :initarg :method
+    :reader method-not-allowed-method)
+   (path
+    :initarg :path
+    :reader method-not-allowed-path)
+   (allowed-methods
+    :initarg :allowed-methods
+    :reader %method-not-allowed-allowed-methods))
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (format stream "The request path exists but does not allow this HTTP method.")))
+  (:documentation
+   "Signaled when a path matches one or more routes registered for other HTTP methods."))
+
+(defun method-not-allowed-allowed-methods (condition)
+  "Return a fresh deterministic list of methods allowed for the request path."
+  (copy-list (%method-not-allowed-allowed-methods condition)))
+
+(define-condition path-decoding-error (routing-error)
+  ((path
+    :initarg :path
+    :initform nil
+    :reader path-decoding-error-path)
+   (parameter
+    :initarg :parameter
+    :initform nil
+    :reader path-decoding-error-parameter)
+   (cause
+    :initarg :cause
+    :initform nil
+    :reader path-decoding-error-cause))
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (format stream "A route path parameter could not be decoded safely.")))
+  (:documentation
+   "Signaled when a selected named path parameter has malformed percent encoding or invalid UTF-8.
+
+The raw path is retained for controlled development diagnostics but is not
+printed by the report."))
+
+(define-condition route-handler-error (routing-error)
+  ((route
+    :initarg :route
+    :reader route-handler-error-route)
+   (cause
+    :initarg :cause
+    :reader route-handler-error-cause))
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (format stream "A Hypermedia route handler signaled an error.")))
+  (:documentation
+   "Redacted wrapper for a condition raised while invoking or normalizing a route handler result."))
+
+(setf (documentation 'routing-error-reason 'function)
+      "Return the bounded reason keyword carried by a ROUTING-ERROR.")
+(setf (documentation 'route-definition-value 'function)
+      "Return the rejected route-definition value; callers must apply an explicit logging policy.")
+(setf (documentation 'route-conflict-method 'function)
+      "Return the normalized HTTP method of a conflicting route registration.")
+(setf (documentation 'route-conflict-template 'function)
+      "Return the new route template involved in a registration conflict.")
+(setf (documentation 'route-conflict-existing-template 'function)
+      "Return the existing route template involved in a registration conflict.")
+(setf (documentation 'route-not-found-method 'function)
+      "Return the normalized method that did not match a route.")
+(setf (documentation 'route-not-found-path 'function)
+      "Return the unmatched path; callers must not log it without an explicit policy.")
+(setf (documentation 'method-not-allowed-method 'function)
+      "Return the rejected normalized request method.")
+(setf (documentation 'method-not-allowed-path 'function)
+      "Return the matched path; callers must not log it without an explicit policy.")
+(setf (documentation 'path-decoding-error-path 'function)
+      "Return the request path associated with a decoding failure.")
+(setf (documentation 'path-decoding-error-parameter 'function)
+      "Return the normalized route parameter name associated with a decoding failure, or NIL.")
+(setf (documentation 'path-decoding-error-cause 'function)
+      "Return the underlying percent/UTF-8 decoder condition retained for development diagnostics.")
+(setf (documentation 'route-handler-error-route 'function)
+      "Return the immutable route descriptor whose handler failed.")
+(setf (documentation 'route-handler-error-cause 'function)
+      "Return the underlying handler condition retained for development diagnostics.")
