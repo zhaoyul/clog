@@ -847,3 +847,78 @@ Example:
          (declare (ignore clog-action::resolved-action))
          ,@body)
        ',action)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; HM-025 session-scoped action dispatch contracts                        ;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(in-package #:clog-action)
+
+(defvar *action-dispatch-lock-owner* nil
+  "Dynamically bound to the component whose lock is already owned by the HM-025 dispatcher.")
+
+(define-condition action-not-authorized (action-error)
+  ()
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (write-string "Component action authorization was denied." stream))))
+
+(define-condition action-validation-error (action-error)
+  ((errors :initarg :errors :initform nil :reader %action-validation-errors))
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (write-string "Component action validation failed." stream))))
+
+(define-condition invalid-action-result (action-error)
+  ()
+  (:report
+   (lambda (condition stream)
+     (declare (ignore condition))
+     (write-string "Component action returned an invalid result." stream))))
+
+(defstruct (action-result
+             (:constructor %make-action-result
+                 (&key (primary-component :current)
+                       invalidated-components effects response-headers
+                       push-url replace-url redirect-url flash (status 200)))
+             (:copier nil)
+             (:conc-name %action-result-))
+  "Internal HM-025 action-result base; HM-033 owns its future public expansion."
+  primary-component invalidated-components effects response-headers
+  push-url replace-url redirect-url flash status)
+
+(defun make-action-result
+    (&key (primary-component :current)
+          invalidated-components effects response-headers
+          push-url replace-url redirect-url flash (status 200))
+  "Construct the internal HM-025 action-result base."
+  (%make-action-result
+   :primary-component primary-component
+   :invalidated-components invalidated-components
+   :effects effects
+   :response-headers response-headers
+   :push-url push-url
+   :replace-url replace-url
+   :redirect-url redirect-url
+   :flash flash
+   :status status))
+
+(defun action-result-p (value)
+  "Return true when VALUE satisfies the internal HM-025 action-result structure type."
+  (typep value 'action-result))
+
+(defun valid-hm-025-action-result-p (result component)
+  "Accept only the current-component fragment subset owned by HM-025."
+  (and (action-result-p result)
+       (or (eq :current (%action-result-primary-component result))
+           (eq component (%action-result-primary-component result)))
+       (null (%action-result-invalidated-components result))
+       (null (%action-result-effects result))
+       (null (%action-result-push-url result))
+       (null (%action-result-replace-url result))
+       (null (%action-result-redirect-url result))
+       (null (%action-result-flash result))
+       (and (integerp (%action-result-status result))
+            (<= 100 (%action-result-status result) 599))))

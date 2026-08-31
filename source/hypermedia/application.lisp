@@ -513,3 +513,284 @@ Server lifecycle remains owned by CLACK:CLACKUP and CLACK:STOP."
 (defun make-hypermedia-app (&rest arguments)
   "Compatibility constructor forwarding ARGUMENTS to MAKE-HYPERMEDIA-APPLICATION."
   (apply #'make-hypermedia-application arguments))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; HM-025 session-scoped component action endpoint                        ;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(in-package #:clog-hypermedia)
+
+(defun hm-025-signal-component-not-mounted (component)
+  "Signal the existing lifecycle condition without recursively acquiring the lock."
+  (error 'clog-component:component-not-mounted
+         :reason :component-not-mounted
+         :component-id (clog-component:component-id component)
+         :operation :handle-action
+         :state (clog-component:component-lifecycle-state component)
+         :lifecycle-reason :component-not-mounted))
+
+(defmethod clog-component:handle-action :around
+    ((component clog-component:component) action request-context)
+  "Preserve direct-call locking while allowing the dispatcher to own the lock once."
+  (declare (ignore action request-context))
+  (if (eq component clog-action::*action-dispatch-lock-owner*)
+      (progn
+        (unless (clog-component:mounted-p component)
+          (hm-025-signal-component-not-mounted component))
+        (call-next-method))
+      (bordeaux-threads:with-lock-held
+          ((clog-component:component-lock component))
+        (unless (clog-component:mounted-p component)
+          (hm-025-signal-component-not-mounted component))
+        (call-next-method))))
+
+(defun hm-025-safe-component-id-p (value)
+  "Return true for the frozen opaque CLOG component-id grammar."
+  (and (stringp value)
+       (= (length value) 39)
+       (string= "clog-c-" value :end2 7)
+       (loop for index from 7 below 39
+             for character = (char value index)
+             always (or (char<= #\0 character #\9)
+                        (char<= #\a character #\f)))))
+
+(defun hm-025-request-id-text (context)
+  "Return CONTEXT's safe request id or a fixed fallback token."
+  (or (clog-http:request-id context) "unavailable"))
+
+(defun hm-025-error-fragment (kind text context &key (status 500) headers)
+  "Create a redacted HTML error fragment without reports or submitted values."
+  (let ((body
+          (if (eq kind :internal)
+              (format nil
+                      "<div data-clog-error=\"internal\">Action failed. Request ID: ~A</div>"
+                      (hm-025-request-id-text context))
+              (format nil "<div data-clog-error=\"~A\">~A</div>" kind text))))
+    (clog-http:html-response body :status status :headers headers)))
+
+(defun hm-025-component-expired-response (context)
+  "Return the frozen HTMX-safe expired-component refresh policy."
+  (hm-025-error-fragment
+   :component-expired "Component expired." context
+   :status 200
+   :headers '(:hx-refresh "true" :x-clog-reason "component-expired")))
+
+(defun hm-025-action-method-response (descriptor context)
+  "Return a safe 405 response when the descriptor does not permit POST."
+  (hm-025-error-fragment
+   :method-not-allowed "Method Not Allowed" context
+   :status 405
+   :headers
+   (list :allow
+         (format nil "~{~A~^, ~}"
+                 (mapcar
+                  (lambda (method)
+                    (case method
+                      (:get "GET") (:head "HEAD") (:post "POST")
+                      (:put "PUT") (:patch "PATCH") (:delete "DELETE")
+                      (:options "OPTIONS") (otherwise "UNKNOWN")))
+                  (clog-action:action-descriptor-allowed-methods descriptor))))))
+
+(defun hm-025-parse-revision (context)
+  "Return the submitted non-negative decimal revision or signal validation failure."
+  (let ((raw (clog-http:form-param context "_clog_revision" nil)))
+    (unless (and (stringp raw) (plusp (length raw)) (every #'digit-char-p raw))
+      (error 'clog-action::action-validation-error
+             :reason :invalid-component-revision))
+    (handler-case
+        (let ((value (parse-integer raw :junk-allowed nil)))
+          (unless (not (minusp value))
+            (error 'clog-action::action-validation-error
+                   :reason :invalid-component-revision))
+          value)
+      (clog-action::action-validation-error (condition) (error condition))
+      (error ()
+        (error 'clog-action::action-validation-error
+               :reason :invalid-component-revision)))))
+
+(defun hm-025-decode-action-input (descriptor context)
+  "Decode CONTEXT and normalize arbitrary decoder failures to typed validation failure."
+  (handler-case
+      (funcall (clog-action:action-descriptor-parameter-decoder descriptor)
+               context)
+    (clog-action::action-validation-error (condition) (error condition))
+    (error ()
+      (error 'clog-action::action-validation-error
+             :reason :parameter-decode-failed))))
+
+(defun hm-025-render-current-component (application component context)
+  "Render COMPONENT as the committed fragment for this action response."
+  (let ((fragment-state
+          (clog-render::make-render-context
+           :request context
+           :application application
+           :mode :fragment
+           :primary-component-id (clog-component:component-id component))))
+    (clog-render::render component fragment-state)))
+
+(defun hm-025-commit-component-change (component)
+  "Commit one revision while the dispatcher already owns COMPONENT's lock."
+  (incf (clog-component::%component-revision component))
+  (setf (clog-component::%component-dirty-p component) t
+        (clog-component::%component-last-access component)
+        (get-universal-time))
+  (clog-component::%component-revision component))
+
+(defun hm-025-response-from-result (result application component context)
+  "Validate RESULT then render the current component fragment."
+  (unless (clog-action::valid-hm-025-action-result-p result component)
+    (error 'clog-action::invalid-action-result :reason :invalid-action-result))
+  (clog-http:html-response
+   (hm-025-render-current-component application component context)
+   :status (clog-action::%action-result-status result)
+   :headers (clog-action::%action-result-response-headers result)))
+
+(defun hm-025-stale-response (application component context)
+  "Return the latest fragment without executing a stale action."
+  (clog-http:html-response
+   (hm-025-render-current-component application component context)
+   :status 200
+   :headers '(:hx-trigger "clog:stale-component"
+              :x-clog-reason "stale-component")))
+
+(defun hm-025-owned-session-component-p (component session-id)
+  "Return true when COMPONENT is mounted and owned by exactly SESSION-ID."
+  (and (typep component 'clog-component:component)
+       (clog-component:mounted-p component)
+       (eq :session (clog-component:component-scope component))
+       (let ((owner (clog-component:component-owner-session-id component)))
+         (and owner (string= owner session-id)))))
+
+(defun hm-025-load-session-component (store session-id component-id)
+  "Load COMPONENT-ID only from SESSION-ID, treating malformed and absent IDs alike."
+  (when (hm-025-safe-component-id-p component-id)
+    (handler-case
+        (clog-component:load-component store session-id component-id)
+      (clog-component:component-store-error () nil))))
+
+(defun hm-025-dispatch-known-component
+    (application component descriptor context decoded-input expected-revision)
+  "Execute one authorized decoded action and render its committed representation."
+  (bordeaux-threads:with-lock-held ((clog-component:component-lock component))
+    (unless (clog-component:mounted-p component)
+      (return-from hm-025-dispatch-known-component
+        (hm-025-component-expired-response context)))
+    (when (and (clog-action:action-descriptor-requires-current-p descriptor)
+               (/= expected-revision
+                   (clog-component:component-revision component)))
+      (return-from hm-025-dispatch-known-component
+        (hm-025-stale-response application component context)))
+    (clog-component:validate-action
+     component (clog-action:action-descriptor-symbol descriptor) context)
+    (let* ((clog-action::*action-dispatch-lock-owner* component)
+           (result
+             (funcall (clog-action:action-descriptor-handler descriptor)
+                      component decoded-input)))
+      (unless (clog-action::valid-hm-025-action-result-p result component)
+        (error 'clog-action::invalid-action-result :reason :invalid-action-result))
+      (hm-025-commit-component-change component)
+      (hm-025-response-from-result result application component context))))
+
+(defun hm-025-dispatch-component-action (application context)
+  "Execute the frozen HM-025 method/session/action/authorization/decode/revision pipeline."
+  (let* ((store (application-component-store application))
+         (component-id (clog-http:path-param context "component-id"))
+         (action-name (clog-http:path-param context "action-name")))
+    (unless (and store (clog-component:component-store-p store))
+      (error 'hypermedia-application-error
+             :reason :action-component-store-required :cause nil))
+    (multiple-value-bind (registry session-id)
+        (clog-session:ensure-session-component-registry store context)
+      (declare (ignore registry))
+      (let ((component
+              (hm-025-load-session-component store session-id component-id)))
+        (unless (and component
+                     (hm-025-owned-session-component-p component session-id))
+          (return-from hm-025-dispatch-component-action
+            (hm-025-component-expired-response context)))
+        (let ((descriptor (clog-action:find-action component action-name)))
+          (unless descriptor
+            (return-from hm-025-dispatch-component-action
+              (hm-025-error-fragment
+               :action-not-found "Not Found" context :status 404)))
+          (unless (clog-action:action-method-allowed-p descriptor :post)
+            (return-from hm-025-dispatch-component-action
+              (hm-025-action-method-response descriptor context)))
+          (unless
+              (funcall (clog-action:action-descriptor-authorize-function descriptor)
+                       component context)
+            (return-from hm-025-dispatch-component-action
+              (hm-025-error-fragment :forbidden "Forbidden" context :status 403)))
+          (let* ((decoded-input (hm-025-decode-action-input descriptor context))
+                 (expected-revision
+                   (when (clog-action:action-descriptor-requires-current-p descriptor)
+                     (hm-025-parse-revision context))))
+            (hm-025-dispatch-known-component
+             application component descriptor context
+             decoded-input expected-revision)))))))
+
+(defun hm-025-action-route-handler (application context)
+  "Run action dispatch with production-safe condition normalization."
+  (let ((development-p
+          (configuration-development-p (application-configuration application))))
+    (handler-case
+        (hm-025-dispatch-component-action application context)
+      (clog-action::action-validation-error (condition)
+        (declare (ignore condition))
+        (hm-025-error-fragment
+         :validation "Action validation failed." context :status 422))
+      (error (condition)
+        (if development-p
+            (error condition)
+            (hm-025-error-fragment :internal "Action failed." context :status 500))))))
+
+(defun hm-025-action-route-path (configuration)
+  "Return the configured internal action route template."
+  (let* ((prefix (configuration-action-prefix configuration))
+         (normalized
+           (if (and (> (length prefix) 1)
+                    (char= #\/ (char prefix (1- (length prefix)))))
+               (string-right-trim "/" prefix)
+               prefix)))
+    (concatenate 'string normalized "/:component-id/:action-name")))
+
+(defun hm-025-install-action-route (application)
+  "Register the POST-only internal component action route."
+  (add-route
+   (application-router application)
+   :post
+   (hm-025-action-route-path (application-configuration application))
+   (lambda (context) (hm-025-action-route-handler application context))
+   :name :clog-component-action
+   :metadata '(:internal t :mutation t :csrf-required t)))
+
+(defun make-hypermedia-application
+    (&key (name "clog-hypermedia")
+          (router (clog-router:make-router))
+          layout
+          (configuration (make-hypermedia-configuration))
+          component-store
+          event-bus)
+  "Create an application and install HM-025 action dispatch when a component store is supplied."
+  (unless (clog-router:router-p router)
+    (error 'hypermedia-application-error :reason :invalid-router :cause nil))
+  (unless (or (null layout) (functionp layout))
+    (error 'hypermedia-application-error :reason :invalid-layout :cause nil))
+  (check-type configuration hypermedia-configuration)
+  (when component-store
+    (unless (clog-component:component-store-p component-store)
+      (error 'hypermedia-application-error
+             :reason :invalid-component-store :cause nil)))
+  (let* ((name (validate-application-name name))
+         (application
+           (make-instance
+            'hypermedia-application
+            :name name :router router :layout layout
+            :configuration configuration
+            :component-store component-store
+            :event-bus event-bus :handler nil)))
+    (when component-store
+      (hm-025-install-action-route application))
+    (setf (slot-value application 'handler)
+          (build-application-handler router configuration))
+    application))

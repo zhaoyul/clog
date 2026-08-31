@@ -208,4 +208,7 @@
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
+             (uiop:load*
+              (asdf:system-relative-pathname
+               :clog "tests/hypermedia/action-dispatch.lisp"))
              (uiop:symbol-call :clog-hypermedia-tests :run-all-tests)))
