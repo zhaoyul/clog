@@ -3,17 +3,41 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defpackage #:clog-session
+  (:import-from #:clog-component
+                #:component-store-p
+                #:component-store-error
+                #:ensure-component-registry
+                #:delete-session-components)
   (:export #:make-request-body-limit-middleware
            #:make-session-middleware
            #:make-csrf-middleware
-           #:csrf-token-for))
+           #:csrf-token-for
+           #:component-store-session-key
+           #:ensure-session-component-registry
+           #:rotate-session-component-registry))
 
 (defpackage #:clog-hypermedia
   (:import-from #:clog-session
-                #:csrf-token-for)
-  (:export #:csrf-token-for))
+                #:csrf-token-for
+                #:component-store-session-key
+                #:ensure-session-component-registry
+                #:rotate-session-component-registry)
+  (:export #:csrf-token-for
+           #:component-store-session-key
+           #:ensure-session-component-registry
+           #:rotate-session-component-registry))
 
 (in-package #:clog-session)
+
+(defparameter +component-store-session-key+ "_clog_component_store"
+  "Serializable Lack session metadata key indicating component-store participation.")
+
+(defparameter +component-store-session-marker+ "v1"
+  "Versioned lightweight marker stored in Lack session data, never a CLOS object.")
+
+(defun component-store-session-key ()
+  "Return a fresh copy of the Lack session metadata key used by HM-021."
+  (copy-seq +component-store-session-key+))
 
 (defun env-header (env name)
   "Return a lower-case Clack header from ENV, or NIL."
@@ -85,6 +109,65 @@ parsed values without consuming the body twice."
         (apply lack.middleware.session:*lack-middleware-session*
                app
                arguments)))))
+
+(defun session-identifier-character-safe-p (character)
+  "Return true for a non-control character in an opaque Lack session ID."
+  (let ((code (char-code character)))
+    (and (>= code 32) (/= code 127))))
+
+(defun valid-session-identifier-p (value)
+  "Return true for a bounded opaque Lack session identifier."
+  (and (stringp value)
+       (plusp (length value))
+       (<= (length value) 4096)
+       (every #'session-identifier-character-safe-p value)))
+
+(defun request-component-session-values (context)
+  "Return CONTEXT's mutable Lack session hash and defensive session ID."
+  (check-type context clog-http:request-context)
+  (let ((session (clog-http:request-session context))
+        (session-id (clog-http:request-session-id context)))
+    (unless (hash-table-p session)
+      (error 'component-store-error :reason :missing-lack-session))
+    (unless (valid-session-identifier-p session-id)
+      (error 'component-store-error :reason :missing-or-invalid-session-id))
+    (values session (copy-seq session-id))))
+
+(defun ensure-session-component-registry (store context)
+  "Ensure STORE has a registry for CONTEXT's current Lack session.
+
+Only the version string `v1` is written to the Lack session hash. Component
+instances, locks and registry objects remain in STORE. The Lack session ID from
+`:lack.session.options` is the sole component namespace used for lookup.
+
+Returns the registry and a defensive copy of the current session ID."
+  (unless (component-store-p store)
+    (error 'component-store-error :reason :invalid-component-store))
+  (multiple-value-bind (session session-id)
+      (request-component-session-values context)
+    (setf (gethash +component-store-session-key+ session)
+          (copy-seq +component-store-session-marker+))
+    (values (ensure-component-registry store session-id)
+            session-id)))
+
+(defun rotate-session-component-registry (store old-session-id context)
+  "Bind CONTEXT's new Lack session and explicitly retire OLD-SESSION-ID.
+
+Session rotation is intentionally explicit rather than inferred from
+browser-controlled request parameters. The new registry is ensured first, then
+the old namespace is deleted and all retained components are unmounted outside
+store locks. When the IDs are equal, no deletion occurs.
+
+Returns the new registry, new session ID and number of retired components."
+  (unless (valid-session-identifier-p old-session-id)
+    (error 'component-store-error :reason :invalid-old-session-id))
+  (multiple-value-bind (registry new-session-id)
+      (ensure-session-component-registry store context)
+    (let ((removed
+            (if (string= old-session-id new-session-id)
+                nil
+                (delete-session-components store old-session-id))))
+      (values registry new-session-id (length removed)))))
 
 (defun csrf-rejection-response (env)
   "Return a stable Clack response for a rejected CSRF request."

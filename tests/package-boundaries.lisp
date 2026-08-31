@@ -23,6 +23,7 @@
       "response"
       "router"
       "configuration"
+      "component-store"
       "session"
       "assets"
       "application"
@@ -254,7 +255,7 @@
     "VALIDATE-ACTION")
   "Exact public component lifecycle and protocol surface after HM-020.")
 
-(defparameter +component-internal-api-export-snapshot+
+(defparameter +component-internal-core-export-snapshot+
   '("AFTER-MOUNT"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
@@ -291,23 +292,70 @@
     "TOUCH-COMPONENT"
     "UNMOUNT-COMPONENT"
     "VALIDATE-ACTION")
-  "Exact internal component core surface after HM-020.")
+  "Exact internal component lifecycle surface after HM-020.")
+
+(defparameter +component-store-api-export-snapshot+
+  '("COMPONENT-NOT-FOUND"
+    "COMPONENT-STORE"
+    "COMPONENT-STORE-COMPONENT-TTL-SECONDS"
+    "COMPONENT-STORE-CONFLICT"
+    "COMPONENT-STORE-ERROR"
+    "COMPONENT-STORE-ERROR-REASON"
+    "COMPONENT-STORE-LIMIT-EXCEEDED"
+    "COMPONENT-STORE-LIMIT-EXCEEDED-LIMIT"
+    "COMPONENT-STORE-MAX-COMPONENTS-PER-SESSION"
+    "COMPONENT-STORE-OPERATION-UNSUPPORTED"
+    "COMPONENT-STORE-OWNERSHIP-ERROR"
+    "COMPONENT-STORE-P"
+    "COMPONENT-STORE-STATS"
+    "DELETE-COMPONENT"
+    "DELETE-SESSION-COMPONENTS"
+    "ENSURE-COMPONENT-REGISTRY"
+    "ENUMERATE-COMPONENTS"
+    "FIND-COMPONENT"
+    "LOAD-COMPONENT"
+    "MAKE-MEMORY-COMPONENT-STORE"
+    "MEMORY-COMPONENT-STORE"
+    "REGISTER-COMPONENT"
+    "REMOVE-COMPONENT"
+    "STORE-COMPONENT"
+    "SWEEP-COMPONENT-STORE"
+    "SWEEP-COMPONENTS"
+    "TOUCH-STORED-COMPONENT")
+  "Exact session-scoped component-store surface after HM-021.")
+
+(defparameter +session-integration-public-api-export-snapshot+
+  '("COMPONENT-STORE-SESSION-KEY"
+    "ENSURE-SESSION-COMPONENT-REGISTRY"
+    "ROTATE-SESSION-COMPONENT-REGISTRY")
+  "Public Lack-session integration helpers added by HM-021.")
+
+(defparameter +component-internal-api-export-snapshot+
+  (sort (append (copy-list +component-internal-core-export-snapshot+)
+                (copy-list +component-store-api-export-snapshot+))
+        #'string<)
+  "Exact internal component core and store surface after HM-021.")
 
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
                 (copy-list +router-api-export-snapshot+)
                 (copy-list +application-api-export-snapshot+)
                 (copy-list +rendering-api-export-snapshot+)
-                (copy-list +component-public-api-export-snapshot+))
+                (copy-list +component-public-api-export-snapshot+)
+                (copy-list +component-store-api-export-snapshot+)
+                (copy-list +session-integration-public-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-020.")
+  "Exact combined public Hypermedia facade surface after HM-021.")
 
 (defparameter +session-api-export-snapshot+
-  '("CSRF-TOKEN-FOR"
+  '("COMPONENT-STORE-SESSION-KEY"
+    "CSRF-TOKEN-FOR"
+    "ENSURE-SESSION-COMPONENT-REGISTRY"
     "MAKE-CSRF-MIDDLEWARE"
     "MAKE-REQUEST-BODY-LIMIT-MIDDLEWARE"
-    "MAKE-SESSION-MIDDLEWARE")
-  "Exact internal Lack adapter surface after HM-013.")
+    "MAKE-SESSION-MIDDLEWARE"
+    "ROTATE-SESSION-COMPONENT-REGISTRY")
+  "Exact internal Lack adapter surface after HM-021.")
 
 (defparameter +render-api-export-snapshot+
   '("ASSET"
@@ -335,7 +383,7 @@
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-020.")
+  "Facade export snapshots after HM-021.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -347,7 +395,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-020.")
+  "Internal package export snapshots after HM-021.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
