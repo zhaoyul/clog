@@ -20,6 +20,7 @@
       "conditions"
       "component"
       "protocol"
+      "action"
       "request"
       "response"
       "router"
@@ -33,6 +34,7 @@
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
+      "CLOG-ACTION"
       "CLOG-RENDER"
       "CLOG-HTMX"
       "CLOG-SESSION"
@@ -337,6 +339,50 @@
     "VALIDATE-ACTION")
   "Exact internal component lifecycle surface after HM-020.")
 
+(defparameter +action-api-export-snapshot+
+  '(
+    "*ACTION-REGISTRY*"
+    "ACTION-DESCRIPTOR"
+    "ACTION-DESCRIPTOR-ALLOWED-METHODS"
+    "ACTION-DESCRIPTOR-AUTHORIZATION-POLICY"
+    "ACTION-DESCRIPTOR-AUTHORIZE-FUNCTION"
+    "ACTION-DESCRIPTOR-COMPONENT-CLASS"
+    "ACTION-DESCRIPTOR-DOCUMENTATION"
+    "ACTION-DESCRIPTOR-EXTERNAL-NAME"
+    "ACTION-DESCRIPTOR-HANDLER"
+    "ACTION-DESCRIPTOR-P"
+    "ACTION-DESCRIPTOR-PARAMETER-DECODER"
+    "ACTION-DESCRIPTOR-REQUIRES-CURRENT-P"
+    "ACTION-DESCRIPTOR-SYMBOL"
+    "ACTION-ERROR"
+    "ACTION-ERROR-REASON"
+    "ACTION-METHOD-ALLOWED-P"
+    "ACTION-METHOD-NOT-ALLOWED"
+    "ACTION-METHOD-NOT-ALLOWED-ALLOWED-METHODS"
+    "ACTION-METHOD-NOT-ALLOWED-METHOD"
+    "ACTION-NOT-FOUND"
+    "ACTION-NOT-FOUND-COMPONENT-CLASS"
+    "ACTION-NOT-FOUND-EXTERNAL-NAME"
+    "ACTION-REGISTRATION-CONFLICT"
+    "ACTION-REGISTRATION-CONFLICT-COMPONENT-CLASS"
+    "ACTION-REGISTRATION-CONFLICT-EXTERNAL-NAME"
+    "ACTION-REGISTRY"
+    "ACTION-REGISTRY-COUNT"
+    "ACTION-REGISTRY-DEVELOPMENT-P"
+    "ACTION-REGISTRY-P"
+    "ACTION-REPLACEMENT-NOT-ALLOWED"
+    "DEFACTION"
+    "FIND-ACTION"
+    "FIND-ACTION-DESCRIPTOR"
+    "INVALID-ACTION-DEFINITION"
+    "INVALID-ACTION-DEFINITION-REASON"
+    "LIST-ACTIONS"
+    "MAKE-ACTION-DESCRIPTOR"
+    "MAKE-ACTION-REGISTRY"
+    "REGISTER-ACTION"
+    )
+  "Exact static action descriptor, registry and DEFACTION surface after HM-024.")
+
 (defparameter +component-store-api-export-snapshot+
   '(
     "COMPONENT-NOT-FOUND"
@@ -387,10 +433,11 @@
                 (copy-list +application-api-export-snapshot+)
                 (copy-list +rendering-api-export-snapshot+)
                 (copy-list +component-public-api-export-snapshot+)
+                (copy-list +action-api-export-snapshot+)
                 (copy-list +component-store-api-export-snapshot+)
                 (copy-list +session-integration-public-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-023.")
+  "Exact combined public Hypermedia facade surface after HM-024.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -465,19 +512,20 @@
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-023.")
+  "Facade export snapshots after HM-024.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
     ("CLOG-ROUTER" ,+router-api-export-snapshot+)
     ("CLOG-COMPONENT" ,+component-internal-api-export-snapshot+)
+    ("CLOG-ACTION" ,+action-api-export-snapshot+)
     ("CLOG-RENDER" ,+render-api-export-snapshot+)
     ("CLOG-HTMX" nil)
     ("CLOG-SESSION" ,+session-api-export-snapshot+)
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-023.")
+  "Internal package export snapshots after HM-024.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
