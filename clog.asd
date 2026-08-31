@@ -130,6 +130,8 @@
   :pathname "source/hypermedia/"
   :components ((:file "packages")
                (:file "conditions")
+               (:file "component")
+               (:file "protocol")
                (:file "request")
                (:file "response")
                (:file "router")
@@ -193,7 +195,8 @@
                              (:file "response")
                              (:file "router")
                              (:file "application")
-                             (:file "assets")))
+                             (:file "assets")
+                             (:file "component")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))

@@ -17,6 +17,8 @@
       "lack-middleware-static")
      ("packages"
       "conditions"
+      "component"
+      "protocol"
       "request"
       "response"
       "router"
@@ -220,13 +222,85 @@
     "RENDER-PAGE")
   "Exact public deterministic asset and page-shell surface after HM-014.")
 
+(defparameter +component-public-api-export-snapshot+
+  '("AFTER-MOUNT"
+    "AUTHORIZE-ACTION-P"
+    "BEFORE-UNMOUNT"
+    "COMPONENT"
+    "COMPONENT-ASSETS"
+    "COMPONENT-ERROR"
+    "COMPONENT-ERROR-REASON"
+    "COMPONENT-ID"
+    "COMPONENT-LIFECYCLE-ERROR"
+    "COMPONENT-LIFECYCLE-ERROR-COMPONENT-ID"
+    "COMPONENT-LIFECYCLE-ERROR-OPERATION"
+    "COMPONENT-LIFECYCLE-ERROR-REASON"
+    "COMPONENT-LIFECYCLE-ERROR-STATE"
+    "COMPONENT-LIFECYCLE-STATE"
+    "COMPONENT-NOT-MOUNTED"
+    "COMPONENT-REVISION"
+    "COMPONENT-TITLE"
+    "HANDLE-ACTION"
+    "INVALID-COMPONENT-DEFINITION"
+    "INVALID-COMPONENT-DEFINITION-REASON"
+    "MOUNT-COMPONENT"
+    "MOUNTED-P"
+    "RENDER-COMPONENT"
+    "RENDER-METHOD-MISSING"
+    "RENDER-METHOD-MISSING-CLASS"
+    "RENDER-METHOD-MISSING-COMPONENT-ID"
+    "TOUCH-COMPONENT"
+    "UNMOUNT-COMPONENT"
+    "VALIDATE-ACTION")
+  "Exact public component lifecycle and protocol surface after HM-020.")
+
+(defparameter +component-internal-api-export-snapshot+
+  '("AFTER-MOUNT"
+    "AUTHORIZE-ACTION-P"
+    "BEFORE-UNMOUNT"
+    "COMPONENT"
+    "COMPONENT-ASSETS"
+    "COMPONENT-DIRTY-P"
+    "COMPONENT-ERROR"
+    "COMPONENT-ERROR-REASON"
+    "COMPONENT-ID"
+    "COMPONENT-KEY"
+    "COMPONENT-LAST-ACCESS"
+    "COMPONENT-LIFECYCLE-ERROR"
+    "COMPONENT-LIFECYCLE-ERROR-COMPONENT-ID"
+    "COMPONENT-LIFECYCLE-ERROR-OPERATION"
+    "COMPONENT-LIFECYCLE-ERROR-REASON"
+    "COMPONENT-LIFECYCLE-ERROR-STATE"
+    "COMPONENT-LIFECYCLE-STATE"
+    "COMPONENT-LOCK"
+    "COMPONENT-NOT-MOUNTED"
+    "COMPONENT-OWNER-SESSION-ID"
+    "COMPONENT-PARENT-ID"
+    "COMPONENT-REVISION"
+    "COMPONENT-SCOPE"
+    "COMPONENT-TITLE"
+    "HANDLE-ACTION"
+    "INVALID-COMPONENT-DEFINITION"
+    "INVALID-COMPONENT-DEFINITION-REASON"
+    "MOUNT-COMPONENT"
+    "MOUNTED-P"
+    "RENDER-COMPONENT"
+    "RENDER-METHOD-MISSING"
+    "RENDER-METHOD-MISSING-CLASS"
+    "RENDER-METHOD-MISSING-COMPONENT-ID"
+    "TOUCH-COMPONENT"
+    "UNMOUNT-COMPONENT"
+    "VALIDATE-ACTION")
+  "Exact internal component core surface after HM-020.")
+
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
                 (copy-list +router-api-export-snapshot+)
                 (copy-list +application-api-export-snapshot+)
-                (copy-list +rendering-api-export-snapshot+))
+                (copy-list +rendering-api-export-snapshot+)
+                (copy-list +component-public-api-export-snapshot+))
         #'string<)
-  "Exact combined public HTTP, router, application and render surface after HM-014.")
+  "Exact combined public Hypermedia facade surface after HM-020.")
 
 (defparameter +session-api-export-snapshot+
   '("CSRF-TOKEN-FOR"
@@ -261,19 +335,19 @@
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-014.")
+  "Facade export snapshots after HM-020.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
     ("CLOG-ROUTER" ,+router-api-export-snapshot+)
-    ("CLOG-COMPONENT" nil)
+    ("CLOG-COMPONENT" ,+component-internal-api-export-snapshot+)
     ("CLOG-RENDER" ,+render-api-export-snapshot+)
     ("CLOG-HTMX" nil)
     ("CLOG-SESSION" ,+session-api-export-snapshot+)
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-014.")
+  "Internal package export snapshots after HM-020.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
