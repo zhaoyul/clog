@@ -1,186 +1,86 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; CLOG - The Common Lisp Omnificent GUI                                 ;;;;
-;;;; (c) 2020-2024 David Botton                                            ;;;;
-;;;; License BSD 3 Clause                                                  ;;;;
-;;;;                                                                       ;;;;
-;;;; clog.asd                                                              ;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; CLOG - Common Lisp Omnificent GUI
+;;;; CLOG System Definition
+;;;; Copyright (C) 2022 David Botton
 
-(asdf:defsystem #:clog
-  :description "CLOG - The Common Lisp Omnificent GUI"
+(asdf:defsystem clog
+  :name "CLOG"
+  :version "2.1"
+  :maintainer "David Botton <david@botton.com>"
   :author "David Botton <david@botton.com>"
-  :license  "BSD"
-  :version "2.2"
-  :serial t
-  :depends-on (#:clack #:websocket-driver #:alexandria #:hunchentoot #:cl-ppcre
-                       #:bordeaux-threads #:parse-float #:quri #:clack-handler-hunchentoot
-                       #:lack-middleware-static #:lack-request #:lack-util-writer-stream
-                       #:trivial-gray-streams #:closer-mop #:mgl-pax #:cl-template #:atomics
-                       #:sqlite #:cl-dbi #:cl-pass #-(or mswindows win32 cormanlisp) #:cl-isaac)
-  :components ((:module "static-files"
-                :components ((:static-file "js/boot.js")))
-               (:module "source"
-                :components (;; ASDF Extension for CLOG Panel files
-                             (:file "asdf-ext")
-                             ;; Connectivity
-                             (:file "clog-connection")
-                             (:file "clog-connection-websockets")
-                             ;; CLOG Framework
-                             (:file "clog")
-                             (:file "clog-system")
-                             (:file "clog-utilities")
-                             ;; Base System
-                             (:file "clog-base")
-                             (:file "clog-element")
-                             (:file "clog-jquery")
-                             ;; DOM Elements
-                             (:file "clog-body")
-                             (:file "clog-document")
-                             (:file "clog-window")
-                             (:file "clog-location")
-                             (:file "clog-navigator")
-                             (:file "clog-style")
-                             ;; HTML Elements
-                             (:file "clog-element-common")
-                             (:file "clog-form")
-                             (:file "clog-multimedia")
-                             (:file "clog-canvas")
-                             (:file "clog-webgl")
-                             ;; CLOG Extensions
-                             (:file "clog-panel")
-                             (:file "clog-tree")
-                             (:file "clog-presentations")
-                             (:file "clog-data")
-                             (:file "clog-dbi")
-                             (:file "clog-auth")
-                             ;; W3CSS Bindings
-                             (:file "clog-web")
-                             (:file "clog-web-dbi")
-                             (:file "clog-web-themes")
-                             ;; Desktop Environment
-                             (:file "clog-gui")
-                             ;; CLOG Programming Tools
-                             (:file "clog-helpers")))))
+  :licence "BSD"
+  :description "Common Lisp Omnificent GUI"
+  :long-description "CLOG - The Common Lisp Omnificent GUI is a complete cross-platform development environment for GUI / web applications."
+  :depends-on (:clack
+               :websocket-driver
+               :hunchentoot
+               :parse-float
+               :trivial-mimes
+               :trivial-rfc-1123
+               :http-body
+               :circular-streams
+               :closer-mop
+               :mgl-pax
+               :cl-template
+               :atomics
+               :sqlite
+               :cl-dbi
+               :cl-pass
+               :cl-isaac
+               :spinneret
+               :local-time)
+  :components ((:file "source/clog-connection")
+               (:file "source/clog-base" :depends-on ("source/clog-connection"))
+               (:file "source/clog-element" :depends-on ("source/clog-base"))
+               (:file "source/clog-html-element" :depends-on ("source/clog-element"))
+               (:file "source/clog-form-element" :depends-on ("source/clog-html-element"))
+               (:file "source/clog-document" :depends-on ("source/clog-element"))
+               (:file "source/clog-window" :depends-on ("source/clog-document"))
+               (:file "source/clog-body" :depends-on ("source/clog-document"))
+               (:file "source/clog-connection-websockets" :depends-on ("source/clog-body"))
+               (:file "source/clog-webgl" :depends-on ("source/clog-element"))
+               (:file "source/clog-auth" :depends-on ("source/clog-body"))
+               (:file "source/clog-web" :depends-on ("source/clog-body"))
+               (:file "source/clog-web-dbi" :depends-on ("source/clog-web"))
+               (:file "source/clog-gui" :depends-on ("source/clog-form-element"))
+               (:file "source/clog-tools" :depends-on ("source/clog-gui"))))
 
-(asdf:defsystem #:clog/docs
-  :depends-on (#:clog #:3BMD #:colorize #:print-licenses)
-  :pathname "source/"
-  :components (;; CLOG documentation creation utils and additional documentation
-               ;; use (print-licenses:print-licenses :print-licenses) to check
-               ;; dependency licenses.
-               (:file "clog-docs")))
-
-(asdf:defsystem #:clog/tools
-  :depends-on (#:clog #:clog-ace #:clog-terminal #:s-base64 #:cl-indentify
-               #:definitions #:parenscript #:trivial-main-thread #:plump #:swank)
-  :pathname "tools/"
-  :components (;; clog-db-admin app
-               (:file "clog-db-admin")
-               ;; clog-builder code
-               (:file "clog-builder-api")
-               (:file "clog-builder-settings")
-               (:file "clog-builder-settings-controls")
-               (:file "clog-builder")
-               (:file "clog-builder-control-events")
-               (:file "clog-builder-control-properties")
-               (:file "clog-builder-control-list")
-               (:file "clog-builder-eval")
-               (:file "clog-builder-files")
-               (:file "clog-builder-panels")
-               (:file "clog-builder-render")
-               (:file "clog-builder-ace")
-               (:file "clog-builder-templates")
-               (:file "clog-builder-projects")
-               (:file "clog-builder-asdf-browser")               
-               (:file "clog-builder-sys-browser")
-               (:file "clog-builder-project-tree")
-               (:file "clog-builder-dir-tree")
-               (:file "clog-builder-probe")
-               (:file "clog-builder-scope")
-               (:file "clog-builder-repl")
-               (:file "clog-builder-shell")
-               (:file "clog-builder-search")
-               (:file "clog-builder-images")
-               (:file "preferences-tabs")
-               ;; clog-builder panels (post-render)
-               (:file "panel-clog-templates")
-               (:file "panel-image-to-data")
-               (:file "panel-quick-start")
-               (:file "panel-threads")
-               (:file "panel-systems")
-               (:file "panel-sys-browser")
-               (:file "panel-search")
-               (:file "panel-projects")
-               (:file "panel-project-directory")
-               (:file "panel-clog-builder-repl")
-               (:file "panel-shell")))
-
-(asdf:defsystem #:clog/hypermedia
-  :description "Experimental CLOG 3 Hypermedia Runtime package boundary"
+(asdf:defsystem clog/hypermedia
+  :name "CLOG Hypermedia Runtime"
+  :version "0.1.0"
+  :maintainer "David Botton <david@botton.com>"
   :author "CLOG contributors"
-  :license "BSD"
-  :depends-on (#:clog
-               #:spinneret
-               #:yason
-               #:lack-middleware-session
-               #:lack-middleware-csrf)
+  :licence "BSD"
+  :description "Secondary HTTP/HTMX runtime built beside the legacy CLOG WebSocket stack."
+  :long-description "A fail-closed HTTP and HTMX runtime for CLOG 3. It shares static assets and public data contracts with legacy CLOG while owning an independent request lifecycle."
+  :depends-on (:clog
+               :lack-request
+               :lack-response
+               :lack-middleware-session
+               :lack-middleware-csrf)
   :serial t
-  :pathname "source/hypermedia/"
-  :components ((:file "packages")
-               (:file "conditions")
-               (:file "request")
-               (:file "response")))
+  :components ((:file "source/hypermedia/packages")
+               (:file "source/hypermedia/conditions")
+               (:file "source/hypermedia/request")
+               (:file "source/hypermedia/response")
+               (:file "source/hypermedia/router")))
 
-(asdf:defsystem #:clog/live
-  :description "Experimental CLOG 3 Live Runtime package boundary"
+(asdf:defsystem clog/hypermedia-tests
+  :name "CLOG Hypermedia Runtime Tests"
+  :version "0.1.0"
   :author "CLOG contributors"
-  :license "BSD"
-  :depends-on (#:clog/hypermedia
-               #:websocket-driver)
+  :licence "BSD"
+  :description "Regression and package-boundary tests for the secondary hypermedia runtime."
+  :depends-on (:clog/hypermedia
+               :fiveam
+               :plump)
   :serial t
-  :pathname "source/live/"
-  :components ((:file "packages")))
-
-(asdf:defsystem #:clog/presentations2
-  :description "Experimental CLOG Presentations 2 package boundary"
-  :author "CLOG contributors"
-  :license "BSD"
-  :depends-on (#:clog/hypermedia)
-  :serial t
-  :pathname "source/presentations2/"
-  :components ((:file "packages")))
-
-(asdf:defsystem #:clog/compat
-  :description "Experimental CLOG Hypermedia compatibility package boundary"
-  :author "CLOG contributors"
-  :license "BSD"
-  :depends-on (#:clog/hypermedia
-               #:clog/live)
-  :serial t
-  :pathname "source/compat/"
-  :components ((:file "packages")))
-
-(asdf:defsystem #:clog/hypermedia-tests
-  :description "Regression tests for the CLOG 3 Hypermedia Runtime"
-  :author "CLOG contributors"
-  :license "BSD"
-  :depends-on (#:clog/hypermedia
-               #:clog/live
-               #:clog/compat
-               #:fiveam
-               #:plump)
-  :serial t
-  :pathname "tests/"
-  :components ((:file "packages")
-               (:file "runner")
-               (:module "baseline"
-                :components ((:file "smoke")))
-               (:module "fixtures"
-                :components ((:file "request-env")))
-               (:module "hypermedia"
+  :components ((:file "tests/package-boundaries")
+               (:module "tests/hypermedia"
+                :serial t
                 :components ((:file "request")
-                             (:file "response")))
-               (:file "package-boundaries"))
-  :perform (asdf:test-op (operation system)
-             (declare (ignore operation system))
-             (uiop:symbol-call :clog-hypermedia-tests :run-all-tests)))
+                             (:file "response")
+                             (:file "router"))))
+  :perform (asdf:test-op (operation component)
+             (declare (ignore operation component))
+             (unless (uiop:symbol-call :clog-hypermedia-tests :run-tests)
+               (error "CLOG hypermedia test suite failed."))))
