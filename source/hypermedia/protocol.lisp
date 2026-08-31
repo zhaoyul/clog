@@ -35,12 +35,14 @@
 
 (defgeneric render-component (component context)
   (:documentation
-   "Render COMPONENT using CONTEXT and return its representation.
+   "Render COMPONENT using an immutable render CONTEXT.
 
-Concrete component classes must define this method. The base COMPONENT method
-signals RENDER-METHOD-MISSING rather than returning placeholder markup. HM-020
-does not define the render-context type or acquire locks around rendering; the
-renderer task owns that boundary."))
+Concrete component classes define this method and normally return a string
+created by SPINNERET:WITH-HTML-STRING. They may instead return an explicit
+CLOG-RENDER:TRUSTED-HTML value. When CONTEXT is a CLOG-RENDER:RENDER-CONTEXT,
+the HM-022 :AROUND method binds request/mode/locale/CSP metadata, validates the
+result, adds component/request correlation to failures and rejects revision or
+session-registry mutation. Rendering performs no HTTP or network write."))
 
 (defgeneric handle-action (component action request-context)
   (:documentation

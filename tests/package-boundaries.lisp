@@ -27,6 +27,7 @@
       "session"
       "assets"
       "application"
+      "render-context"
       "render")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
@@ -50,7 +51,8 @@
   "Current secondary ASDF system, dependency, component and package contracts.")
 
 (defparameter +http-api-export-snapshot+
-  '("CLOG-HYPERMEDIA-ERROR"
+  '(
+    "CLOG-HYPERMEDIA-ERROR"
     "FORM-PARAM"
     "FORM-PARAM-VALUES"
     "HTML-RESPONSE"
@@ -119,7 +121,8 @@
   "Exact internal HTTP adapter surface after HM-010 and HM-011.")
 
 (defparameter +router-api-export-snapshot+
-  '("ADD-ROUTE"
+  '(
+    "ADD-ROUTE"
     "DISPATCH-ROUTE"
     "FIND-ROUTE"
     "MAKE-ROUTER"
@@ -160,7 +163,8 @@
   "Exact internal deterministic router surface after HM-012.")
 
 (defparameter +application-api-export-snapshot+
-  '("APPLICATION-COMPONENT-STORE"
+  '(
+    "APPLICATION-COMPONENT-STORE"
     "APPLICATION-CONFIGURATION"
     "APPLICATION-EVENT-BUS"
     "APPLICATION-HANDLER"
@@ -207,7 +211,8 @@
   "Exact public application and middleware surface after HM-013.")
 
 (defparameter +rendering-api-export-snapshot+
-  '("ASSET"
+  '(
+    "ASSET"
     "ASSET-DEFER-P"
     "ASSET-ERROR"
     "ASSET-ERROR-REASON"
@@ -218,13 +223,44 @@
     "ASSET-P"
     "ASSET-TYPE"
     "ASSET-URL"
+    "CURRENT-RENDER-COMPONENT"
+    "CURRENT-RENDER-CONTEXT"
+    "CURRENT-RENDER-CSP-NONCE"
+    "CURRENT-RENDER-LOCALE"
+    "CURRENT-RENDER-MODE"
+    "CURRENT-RENDER-REQUEST"
+    "INVALID-RENDER-CONTEXT"
+    "INVALID-RENDER-RESULT"
     "MAKE-ASSET"
+    "MAKE-RENDER-CONTEXT"
+    "MAKE-TRUSTED-HTML"
+    "RENDER"
     "RENDER-ASSETS"
-    "RENDER-PAGE")
-  "Exact public deterministic asset and page-shell surface after HM-014.")
+    "RENDER-CONTEXT"
+    "RENDER-CONTEXT-APPLICATION"
+    "RENDER-CONTEXT-ASSETS"
+    "RENDER-CONTEXT-CSP-NONCE"
+    "RENDER-CONTEXT-LOCALE"
+    "RENDER-CONTEXT-MODE"
+    "RENDER-CONTEXT-PRIMARY-COMPONENT-ID"
+    "RENDER-CONTEXT-REQUEST"
+    "RENDER-CONTEXT-TARGET"
+    "RENDER-PAGE"
+    "RENDER-PURITY-VIOLATION"
+    "RENDER-PURITY-VIOLATION-KIND"
+    "RENDERING-ERROR"
+    "RENDERING-ERROR-CAUSE"
+    "RENDERING-ERROR-COMPONENT-ID"
+    "RENDERING-ERROR-REASON"
+    "RENDERING-ERROR-REQUEST-ID"
+    "TRUSTED-HTML"
+    "TRUSTED-HTML-P"
+    "TRUSTED-HTML-STRING")
+  "Exact public asset, render-context and Spinneret surface after HM-022.")
 
 (defparameter +component-public-api-export-snapshot+
-  '("AFTER-MOUNT"
+  '(
+    "AFTER-MOUNT"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
     "COMPONENT"
@@ -256,7 +292,8 @@
   "Exact public component lifecycle and protocol surface after HM-020.")
 
 (defparameter +component-internal-core-export-snapshot+
-  '("AFTER-MOUNT"
+  '(
+    "AFTER-MOUNT"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
     "COMPONENT"
@@ -295,7 +332,8 @@
   "Exact internal component lifecycle surface after HM-020.")
 
 (defparameter +component-store-api-export-snapshot+
-  '("COMPONENT-NOT-FOUND"
+  '(
+    "COMPONENT-NOT-FOUND"
     "COMPONENT-STORE"
     "COMPONENT-STORE-COMPONENT-TTL-SECONDS"
     "COMPONENT-STORE-CONFLICT"
@@ -325,7 +363,8 @@
   "Exact session-scoped component-store surface after HM-021.")
 
 (defparameter +session-integration-public-api-export-snapshot+
-  '("COMPONENT-STORE-SESSION-KEY"
+  '(
+    "COMPONENT-STORE-SESSION-KEY"
     "ENSURE-SESSION-COMPONENT-REGISTRY"
     "ROTATE-SESSION-COMPONENT-REGISTRY")
   "Public Lack-session integration helpers added by HM-021.")
@@ -345,10 +384,11 @@
                 (copy-list +component-store-api-export-snapshot+)
                 (copy-list +session-integration-public-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-021.")
+  "Exact combined public Hypermedia facade surface after HM-022.")
 
 (defparameter +session-api-export-snapshot+
-  '("COMPONENT-STORE-SESSION-KEY"
+  '(
+    "COMPONENT-STORE-SESSION-KEY"
     "CSRF-TOKEN-FOR"
     "ENSURE-SESSION-COMPONENT-REGISTRY"
     "MAKE-CSRF-MIDDLEWARE"
@@ -358,7 +398,8 @@
   "Exact internal Lack adapter surface after HM-021.")
 
 (defparameter +render-api-export-snapshot+
-  '("ASSET"
+  '(
+    "ASSET"
     "ASSET-DEFER-P"
     "ASSET-ERROR"
     "ASSET-ERROR-REASON"
@@ -369,21 +410,51 @@
     "ASSET-P"
     "ASSET-TYPE"
     "ASSET-URL"
+    "CURRENT-RENDER-COMPONENT"
+    "CURRENT-RENDER-CONTEXT"
+    "CURRENT-RENDER-CSP-NONCE"
+    "CURRENT-RENDER-LOCALE"
+    "CURRENT-RENDER-MODE"
+    "CURRENT-RENDER-REQUEST"
+    "INVALID-RENDER-CONTEXT"
+    "INVALID-RENDER-RESULT"
     "MAKE-ASSET"
+    "MAKE-RENDER-CONTEXT"
     "MAKE-STATIC-ASSET-MIDDLEWARE"
+    "MAKE-TRUSTED-HTML"
+    "RENDER"
     "RENDER-ASSETS"
+    "RENDER-CONTEXT"
+    "RENDER-CONTEXT-APPLICATION"
+    "RENDER-CONTEXT-ASSETS"
+    "RENDER-CONTEXT-CSP-NONCE"
+    "RENDER-CONTEXT-LOCALE"
+    "RENDER-CONTEXT-MODE"
+    "RENDER-CONTEXT-PRIMARY-COMPONENT-ID"
+    "RENDER-CONTEXT-REQUEST"
+    "RENDER-CONTEXT-TARGET"
     "RENDER-PAGE"
+    "RENDER-PURITY-VIOLATION"
+    "RENDER-PURITY-VIOLATION-KIND"
+    "RENDERING-ERROR"
+    "RENDERING-ERROR-CAUSE"
+    "RENDERING-ERROR-COMPONENT-ID"
+    "RENDERING-ERROR-REASON"
+    "RENDERING-ERROR-REQUEST-ID"
     "STATIC-ASSET-ERROR"
     "STATIC-ASSET-ERROR-REASON"
-    "STATIC-ASSET-ERROR-STATUS")
-  "Exact internal static and HTML asset surface after HM-014.")
+    "STATIC-ASSET-ERROR-STATUS"
+    "TRUSTED-HTML"
+    "TRUSTED-HTML-P"
+    "TRUSTED-HTML-STRING")
+  "Exact internal asset, render-context and Spinneret surface after HM-022.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-021.")
+  "Facade export snapshots after HM-022.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -395,7 +466,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-021.")
+  "Internal package export snapshots after HM-022.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

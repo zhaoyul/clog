@@ -1,14 +1,17 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; CLOG 3 Hypermedia Runtime complete offline HTML page shell              ;;;;
+;;;; CLOG 3 Hypermedia Runtime deterministic component and page rendering   ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defpackage #:clog-render
-  (:export #:render-page))
+  (:export #:render
+           #:render-page))
 
 (defpackage #:clog-hypermedia
   (:import-from #:clog-render
+                #:render
                 #:render-page)
-  (:export #:render-page))
+  (:export #:render
+           #:render-page))
 
 (in-package #:clog-render)
 
@@ -33,12 +36,7 @@
 (defun safe-root-html-p (value)
   "Return true for server-rendered markup without forbidden control bytes."
   (and (stringp value)
-       (every (lambda (character)
-                (let ((code (char-code character)))
-                  (or (and (>= code 32) (/= code 127))
-                      (member character '(#\Tab #\Newline #\Return)
-                              :test #'char=))))
-              value)))
+       (safe-render-string-p value :allow-empty t)))
 
 (defun validate-root-html (value)
   "Return trusted server-rendered VALUE or signal ASSET-ERROR."
@@ -202,21 +200,14 @@ conflict detection and de-duplication."
     (terpri stream)
     (write-string "</html>" stream)))
 
-(defun render-page
+(defun render-page-shell
     (application context root-html
      &key title
           (assets nil)
           (sse-p nil)
           (websocket-p nil)
           (language "en"))
-  "Render a complete offline-capable HTML response for APPLICATION.
-
-ROOT-HTML is trusted server-rendered markup and is inserted without escaping.
-TITLE, CSRF metadata and all asset attributes are escaped. Vendored HTMX core
-is loaded by default; strict CSP automatically adds hx-csp and propagates only
-the nonce stored in CONTEXT. SSE and WebSocket extensions are opt-in per page.
-Application styles precede framework scripts and application scripts follow
-them, producing one stable execution order without CDN references."
+  "Render the HM-014 complete page shell around trusted ROOT-HTML."
   (check-type application clog-hypermedia:hypermedia-application)
   (check-type context clog-http:request-context)
   (validate-root-html root-html)
@@ -243,3 +234,369 @@ them, producing one stable execution order without CDN references."
       csrf-token
       assets-markup
       root-html))))
+
+(defun deterministic-spinneret-text (value)
+  "Render VALUE as escaped text using deterministic Spinneret settings."
+  (let ((*print-pretty* nil)
+        (spinneret:*html-style* :tree)
+        (spinneret:*suppress-inserted-spaces* t)
+        (spinneret:*always-quote* t))
+    (spinneret:with-html-string
+      (spinneret:html value))))
+
+(defun render-context-request-id (context)
+  "Return CONTEXT's request ID, or NIL for isolated :TEST rendering."
+  (let ((request (render-context-request context)))
+    (and request (clog-http:request-id request))))
+
+(defun render-component-correlation (component context)
+  "Return COMPONENT and request identifiers for typed renderer conditions."
+  (values (and component (clog-component:component-id component))
+          (render-context-request-id context)))
+
+(defun signal-rendering-error
+    (condition-type reason component context &key cause kind)
+  "Signal CONDITION-TYPE with bounded renderer correlation metadata."
+  (multiple-value-bind (component-id request-id)
+      (render-component-correlation component context)
+    (if (eq condition-type 'render-purity-violation)
+        (error condition-type
+               :reason reason
+               :component-id component-id
+               :request-id request-id
+               :cause cause
+               :kind kind)
+        (error condition-type
+               :reason reason
+               :component-id component-id
+               :request-id request-id
+               :cause cause))))
+
+(defun ensure-renderable-component (component context)
+  "Reject inactive components before user rendering begins."
+  (unless (clog-component:mounted-p component)
+    (signal-rendering-error
+     'rendering-error :component-not-mounted component context))
+  component)
+
+(defun registry-membership-snapshot (component context)
+  "Return a deterministic session registry membership snapshot, or :UNOBSERVED.
+
+Store enumeration acquires and releases only the registry lock before user
+rendering begins. The snapshot contains IDs and object identity, not mutable
+component state, so unrelated revision changes do not create false positives."
+  (let* ((application (render-context-application context))
+         (request (render-context-request context))
+         (store
+           (and application
+                (clog-hypermedia:application-component-store application)))
+         (session-id
+           (and request (clog-http:request-session-id request))))
+    (if (and store
+             (clog-component:component-store-p store)
+             session-id
+             (eq :session (clog-component:component-scope component)))
+        (mapcar (lambda (member)
+                  (cons (clog-component:component-id member) member))
+                (clog-component:enumerate-components store session-id))
+        :unobserved)))
+
+(defun same-registry-membership-p (before after)
+  "Return true when BEFORE and AFTER contain the same ordered IDs and objects."
+  (or (and (eq before :unobserved) (eq after :unobserved))
+      (and (listp before)
+           (listp after)
+           (= (length before) (length after))
+           (every (lambda (left right)
+                    (and (string= (car left) (car right))
+                         (eq (cdr left) (cdr right))))
+                  before
+                  after))))
+
+(defmacro with-component-purity-guard
+    ((component context failure-reason) &body body)
+  "Evaluate BODY as a pure component render protocol operation.
+
+No component-store lock is held while BODY runs. Revision and session registry
+membership are sampled before and after. A renderer that mutates either boundary
+signals RENDER-PURITY-VIOLATION even when its own body also signaled an error."
+  `(progn
+     (ensure-renderable-component ,component ,context)
+     (let* ((before-revision
+              (clog-component:component-revision ,component))
+            (before-registry
+              (registry-membership-snapshot ,component ,context))
+            (result nil)
+            (failure nil))
+       (with-current-render-bindings (,component ,context)
+         (let ((*print-pretty* nil)
+               (spinneret:*html-style* :tree)
+               (spinneret:*suppress-inserted-spaces* t)
+               (spinneret:*always-quote* t))
+           (handler-case
+               (setf result (progn ,@body))
+             (error (condition)
+               (setf failure condition)))))
+       (let ((after-revision
+               (clog-component:component-revision ,component))
+             (after-registry
+               (registry-membership-snapshot ,component ,context)))
+         (cond
+           ((/= before-revision after-revision)
+            (signal-rendering-error
+             'render-purity-violation
+             :component-revision-changed
+             ,component
+             ,context
+             :cause failure
+             :kind :component-revision))
+           ((not (same-registry-membership-p
+                  before-registry after-registry))
+            (signal-rendering-error
+             'render-purity-violation
+             :component-registry-changed
+             ,component
+             ,context
+             :cause failure
+             :kind :component-registry))))
+       (when failure
+         (if (typep failure 'rendering-error)
+             (error failure)
+             (signal-rendering-error
+              'rendering-error
+              ,failure-reason
+              ,component
+              ,context
+              :cause failure)))
+       result)))
+
+(defun normalize-component-render-result (result component context)
+  "Convert a component render RESULT to a validated HTML string."
+  (let ((string
+          (typecase result
+            (trusted-html (%trusted-html-string result))
+            (string result)
+            (t
+             (signal-rendering-error
+              'invalid-render-result
+              :component-renderer-returned-unsupported-value
+              component
+              context)))))
+    (unless (safe-render-string-p string :allow-empty t)
+      (signal-rendering-error
+       'invalid-render-result
+       :component-renderer-returned-invalid-unicode
+       component
+       context))
+    (copy-seq string)))
+
+(defmethod clog-component:render-component :around
+    ((component clog-component:component) (context render-context))
+  "Guard component rendering, bind context metadata and return validated HTML.
+
+The concrete method may use SPINNERET:WITH-HTML-STRING or return TRUSTED-HTML.
+It must not mutate component revision or session registry membership."
+  (normalize-component-render-result
+   (with-component-purity-guard
+       (component context :component-render-failed)
+     (call-next-method))
+   component
+   context))
+
+(defun render (value context)
+  "Render VALUE to a UTF-8 Common Lisp string using CONTEXT.
+
+Components dispatch through the guarded RENDER-COMPONENT protocol. Ordinary
+strings, characters, numbers and symbols are escaped by Spinneret. TRUSTED-HTML
+is emitted verbatim through its explicit trust boundary. NIL renders as the
+empty string. The function performs no response/network write."
+  (check-type context render-context)
+  (typecase value
+    (clog-component:component
+     (clog-component:render-component value context))
+    (trusted-html
+     (trusted-html-string value))
+    (null "")
+    ((or string character number symbol)
+     (deterministic-spinneret-text value))
+    (t
+     (signal-rendering-error
+      'invalid-render-result
+      :unsupported-render-value
+      nil
+      context))))
+
+(defun call-component-title (component context)
+  "Read COMPONENT's optional title under the same pure-render guard."
+  (let ((title
+          (with-component-purity-guard
+              (component context :component-title-failed)
+            (clog-component:component-title component context))))
+    (unless (or (null title)
+                (safe-render-string-p title))
+      (signal-rendering-error
+       'invalid-render-result
+       :invalid-component-title
+       component
+       context))
+    (and title (copy-seq title))))
+
+(defun call-component-assets (component context)
+  "Read COMPONENT's immutable asset contribution under the pure-render guard."
+  (let ((assets
+          (with-component-purity-guard
+              (component context :component-assets-failed)
+            (clog-component:component-assets component context))))
+    (unless (proper-asset-list-p assets)
+      (signal-rendering-error
+       'invalid-render-result
+       :malformed-component-assets
+       component
+       context))
+    (dolist (descriptor assets)
+      (unless (asset-p descriptor)
+        (signal-rendering-error
+         'invalid-render-result
+         :invalid-component-asset
+         component
+         context)))
+    (copy-list assets)))
+
+(defun ensure-page-render-context (component context)
+  "Validate CONTEXT for complete page rendering of COMPONENT."
+  (check-type context render-context)
+  (unless (eq :page (render-context-mode context))
+    (signal-rendering-error
+     'invalid-render-context :page-mode-required component context))
+  (unless (render-context-request context)
+    (signal-rendering-error
+     'invalid-render-context :request-context-required component context))
+  (unless (render-context-application context)
+    (signal-rendering-error
+     'invalid-render-context :application-required-for-page component context))
+  (let ((primary (render-context-primary-component-id context)))
+    (when (and primary
+               (not (string=
+                     primary
+                     (clog-component:component-id component))))
+      (signal-rendering-error
+       'invalid-render-context
+       :primary-component-id-mismatch
+       component
+       context)))
+  context)
+
+(defun validate-extra-page-assets (assets component context)
+  "Return a fresh validated list of page-level ASSETS."
+  (unless (proper-asset-list-p assets)
+    (signal-rendering-error
+     'invalid-render-result
+     :malformed-page-assets
+     component
+     context))
+  (dolist (descriptor assets)
+    (unless (asset-p descriptor)
+      (signal-rendering-error
+       'invalid-render-result
+       :invalid-page-asset
+       component
+       context)))
+  (copy-list assets))
+
+(defun render-component-page
+    (component context
+     &key title
+          (assets nil)
+          (sse-p nil)
+          (websocket-p nil)
+          (language "en"))
+  "Render COMPONENT into the complete offline page shell described by CONTEXT."
+  (ensure-page-render-context component context)
+  (let* ((application (render-context-application context))
+         (request (render-context-request context))
+         (component-title (or title (call-component-title component context)))
+         (all-assets
+           (append (render-context-assets context)
+                   (call-component-assets component context)
+                   (validate-extra-page-assets assets component context)))
+         (root-html (render component context)))
+    (render-page-shell
+     application
+     request
+     root-html
+     :title component-title
+     :assets all-assets
+     :sse-p sse-p
+     :websocket-p websocket-p
+     :language language)))
+
+(defun render-trusted-page
+    (trusted context
+     &key title
+          (assets nil)
+          (sse-p nil)
+          (websocket-p nil)
+          (language "en"))
+  "Render explicit TRUSTED-HTML through CONTEXT's complete page shell."
+  (check-type context render-context)
+  (unless (eq :page (render-context-mode context))
+    (signal-rendering-error
+     'invalid-render-context :page-mode-required nil context))
+  (let ((application (render-context-application context))
+        (request (render-context-request context)))
+    (unless application
+      (signal-rendering-error
+       'invalid-render-context :application-required-for-page nil context))
+    (unless request
+      (signal-rendering-error
+       'invalid-render-context :request-context-required nil context))
+    (render-page-shell
+     application
+     request
+     (trusted-html-string trusted)
+     :title title
+     :assets (append
+              (render-context-assets context)
+              (validate-extra-page-assets assets nil context))
+     :sse-p sse-p
+     :websocket-p websocket-p
+     :language language)))
+
+(defun render-page (subject context &rest arguments)
+  "Render a complete HTML page while preserving the HM-014 call contract.
+
+Legacy-compatible form:
+  (RENDER-PAGE APPLICATION REQUEST-CONTEXT TRUSTED-ROOT-STRING &KEY ...)
+
+Component form:
+  (RENDER-PAGE COMPONENT RENDER-CONTEXT &KEY ...)
+
+Explicit trusted form:
+  (RENDER-PAGE TRUSTED-HTML RENDER-CONTEXT &KEY ...)
+
+Component and trusted forms derive request, application, assets and CSP metadata
+from the immutable render context. Fragment rendering uses RENDER instead and
+never introduces html/head/body."
+  (cond
+    ((typep subject 'clog-hypermedia:hypermedia-application)
+     (unless arguments
+       (error 'asset-error :reason :missing-root-html))
+     (let ((root-html (first arguments))
+           (options (rest arguments)))
+       (apply #'render-page-shell
+              subject
+              context
+              root-html
+              options)))
+    ((typep subject 'clog-component:component)
+     (apply #'render-component-page subject context arguments))
+    ((trusted-html-p subject)
+     (apply #'render-trusted-page subject context arguments))
+    (t
+     (if (typep context 'render-context)
+         (signal-rendering-error
+          'invalid-render-result
+          :unsupported-page-root
+          nil
+          context)
+         (error 'asset-error :reason :unsupported-page-root)))))

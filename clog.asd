@@ -140,6 +140,7 @@
                (:file "session")
                (:file "assets")
                (:file "application")
+               (:file "render-context")
                (:file "render")))
 
 (asdf:defsystem #:clog/live
@@ -198,7 +199,8 @@
                              (:file "application")
                              (:file "assets")
                              (:file "component")
-                             (:file "component-store")))
+                             (:file "component-store")
+                             (:file "render")))
                (:file "package-boundaries"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
