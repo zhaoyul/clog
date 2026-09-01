@@ -260,7 +260,18 @@ def assert_local_htmx(session: Session, base_url: str) -> None:
     )
 
 
-def csp_diagnostics(session: Session) -> dict:
+def action_responses(messages: list[dict]) -> list[dict]:
+    responses = []
+    for message in messages:
+        if message.get("method") != "Network.responseReceived":
+            continue
+        response = message.get("params", {}).get("response", {})
+        if "/_clog/action/" in str(response.get("url", "")):
+            responses.append(response)
+    return responses
+
+
+def csp_diagnostics(session: Session, messages: list[dict] | None = None) -> dict:
     dom = session.execute(
         """
         const scripts = Array.from(document.querySelectorAll('script')).map((script) => ({
@@ -275,16 +286,27 @@ def csp_diagnostics(session: Session) -> dict:
           hxTarget: form.getAttribute('hx-target'),
           hxSwap: form.getAttribute('hx-swap')
         }));
-        return {scripts, forms, readyState: document.readyState};
+        return {
+          scripts,
+          forms,
+          readyState: document.readyState,
+          afterRequest: window.__hm027AfterRequest || null
+        };
         """
     )
-    return {"dom": dom, "browserLogs": session.browser_logs()}
+    return {
+        "dom": dom,
+        "actionResponses": action_responses(messages or []),
+        "browserLogs": session.browser_logs(),
+    }
 
 
-def assert_csp_authorized_htmx_forms(session: Session) -> None:
+def assert_csp_authorized_htmx_forms(
+    session: Session, messages: list[dict] | None = None
+) -> None:
     forms = session.find_all("form[hx-post][hx-target][hx-swap][hx-nonce]")
     if len(forms) != 3:
-        diagnostic = csp_diagnostics(session)
+        diagnostic = csp_diagnostics(session, messages)
         raise AssertionError(
             "Expected 3 CSP-authorized HTMX forms, found "
             f"{len(forms)}; diagnostics={json.dumps(diagnostic, ensure_ascii=False)}"
@@ -335,6 +357,23 @@ def assert_prg_redirect(messages: list[dict]) -> None:
     raise AssertionError("JavaScript-off mutation did not expose a 303 Post/Redirect/Get transition")
 
 
+def install_after_request_capture(session: Session) -> None:
+    session.execute(
+        """
+        window.__hm027AfterRequest = null;
+        document.addEventListener('htmx:after:request', (event) => {
+          const ctx = event.detail && event.detail.ctx;
+          if (!ctx || !String(ctx.request && ctx.request.action || '').includes('/_clog/action/')) return;
+          window.__hm027AfterRequest = {
+            text: ctx.text,
+            responseUrl: ctx.response && ctx.response.raw && ctx.response.raw.url,
+            csp: ctx.response && ctx.response.headers && ctx.response.headers.get('Content-Security-Policy')
+          };
+        }, { once: true });
+        """
+    )
+
+
 def exercise_js_on(server: DriverServer, base_url: str) -> None:
     session_a = server.session(javascript_enabled=True)
     session_b = server.session(javascript_enabled=True)
@@ -346,14 +385,16 @@ def exercise_js_on(server: DriverServer, base_url: str) -> None:
 
         root_id = session_a.attribute(session_a.find("section.counter"), "id")
         initial_url = session_a.current_url()
+        install_after_request_capture(session_a)
         session_a.performance_logs()
         session_a.click_button("+1")
         assert_counter(session_a, "1")
-        assert_csp_authorized_htmx_forms(session_a)
+        action_messages = session_a.performance_logs()
+        assert_csp_authorized_htmx_forms(session_a, action_messages)
 
         assert session_a.current_url() == initial_url, "HTMX action unexpectedly navigated the page"
         assert session_a.attribute(session_a.find("section.counter"), "id") == root_id
-        assert_hx_request(session_a.performance_logs())
+        assert_hx_request(action_messages)
 
         assert_counter(session_b, "0")
         session_b.click_button("-1")
