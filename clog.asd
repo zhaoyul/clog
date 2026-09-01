@@ -144,7 +144,8 @@
                (:file "application")
                (:file "render-context")
                (:file "render")
-               (:file "htmx")))
+               (:file "htmx")
+               (:file "partials")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
