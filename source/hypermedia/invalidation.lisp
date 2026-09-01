@@ -147,7 +147,9 @@ Nested calls must use the exact same CONTEXT and simply contribute to the outer
 dirty set. For an outer call, THUNK must complete normally before state is
 flushed. AFTER-FLUSH, when supplied by the framework action dispatcher, receives
 three arguments: the list of THUNK return values, the committed dirty component
-list, and the transaction object. No component lock is held during AFTER-FLUSH."
+list, and the transaction object. Transaction commit locks have been released
+before AFTER-FLUSH starts; a response mapper may acquire a separately ordered
+component snapshot set while rendering the committed representation."
   (check-type context clog-http:request-context)
   (unless (functionp thunk)
     (transaction-error :invalid-transaction-thunk))
@@ -183,9 +185,17 @@ committed by this transaction."
   "Return component-id -> exact component table for reduction candidates."
   (let ((table (make-hash-table :test #'equal)))
     (dolist (component components)
-      (setf (gethash (clog-component:component-id component) table) component))
+      (let* ((id (clog-component:component-id component))
+             (existing (gethash id table)))
+        (when (and existing (not (eq existing component)))
+          (transaction-error :component-identity-conflict))
+        (setf (gethash id table) component)))
     (when primary
-      (setf (gethash (clog-component:component-id primary) table) primary))
+      (let* ((id (clog-component:component-id primary))
+             (existing (gethash id table)))
+        (when (and existing (not (eq existing primary)))
+          (transaction-error :component-identity-conflict))
+        (setf (gethash id table) primary)))
     table))
 
 (defun component-ancestor-p (ancestor descendant table)
@@ -310,6 +320,44 @@ body-less HTTP contract."
      :flash (clog-action:action-result-flash result)
      :status (clog-action:action-result-status result))))
 
+(defun partial-subject-component (subject)
+  "Return SUBJECT's concrete component capability, or NIL when unsupported."
+  (cond
+    ((typep subject 'clog-component:component) subject)
+    ((clog-partials:partial-p subject) (clog-partials:partial-component subject))
+    (t nil)))
+
+(defun action-result-render-components (result current-component)
+  "Return exact components required to construct RESULT's committed snapshot."
+  (let ((components nil)
+        (primary
+          (action-result-primary-component-object result current-component)))
+    (when primary
+      (push primary components))
+    (dolist (subject (clog-action:action-result-invalidated-components result))
+      (let ((component (partial-subject-component subject)))
+        (when component (push component components))))
+    ;; Build a table to reject same-id/different-object aliases before locking,
+    ;; then return one exact component per ID in lexicographic order.
+    (let ((table (candidate-component-table components))
+          (ordered nil))
+      (maphash (lambda (id component)
+                 (declare (ignore id))
+                 (push component ordered))
+               table)
+      (sort ordered #'string< :key #'clog-component:component-id))))
+
+(defun call-with-action-result-render-locks (result current-component thunk)
+  "Call THUNK with RESULT's component snapshot locks held in stable ID order.
+
+State has already committed before this function runs. The short-lived locks
+protect only deterministic server-side snapshot rendering from concurrent
+component revision changes; no domain/global lock is held and no network write
+occurs while these locks are held."
+  (call-with-component-locks
+   (action-result-render-components result current-component)
+   thunk))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; HM-034 late action-dispatch transaction bridge                        ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -318,7 +366,7 @@ body-less HTTP contract."
 
 (defun hm-025-dispatch-known-component
     (application component descriptor context decoded-input expected-revision)
-  "HM-034 bridge: commit state transactionally, then render with no locks held."
+  "HM-034 bridge: commit state first, then render one stable response snapshot."
   (clog-invalidation::call-with-ui-transaction
    context
    (lambda ()
@@ -348,8 +396,12 @@ body-less HTTP contract."
    :after-flush
    (lambda (body-values committed transaction)
      (declare (ignore transaction))
-     (let ((result (first body-values)))
-       (hm-025-response-from-result
-        (clog-invalidation::copy-action-result-with-dirty-components
-         result component committed)
-        application component context)))))
+     (let* ((result (first body-values))
+            (normalized
+              (clog-invalidation::copy-action-result-with-dirty-components
+               result component committed)))
+       (clog-invalidation::call-with-action-result-render-locks
+        normalized component
+        (lambda ()
+          (hm-025-response-from-result
+           normalized application component context)))))))
