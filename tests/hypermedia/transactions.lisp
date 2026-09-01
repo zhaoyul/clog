@@ -96,10 +96,13 @@
                        (clog-hypermedia:invalidate-component b)))))))
          (threads
            (loop for index below 6
+                 for reverse-p = (oddp index)
                  collect
-                 (bordeaux-threads:make-thread
-                  (lambda () (funcall worker (oddp index)))
-                  :name (format nil "hm034-worker-~D" index)))))
+                 (let ((worker-order reverse-p)
+                       (worker-index index))
+                   (bordeaux-threads:make-thread
+                    (lambda () (funcall worker worker-order))
+                    :name (format nil "hm034-worker-~D" worker-index))))))
     (dolist (thread threads)
       (bordeaux-threads:join-thread thread))
     ;; Six workers times eight transactions. Each transaction commits each
