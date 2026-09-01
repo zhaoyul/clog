@@ -109,6 +109,38 @@
                   (clack-response-header response
                                          :content-security-policy))))))
 
+(test application/csp-nonce-is-one-request-capability
+  (let ((router (clog-hypermedia:make-router))
+        (nonce-calls 0)
+        (observed-nonce nil))
+    (clog-hypermedia:add-route
+     router :get "/nonce"
+     (lambda (context)
+       (setf observed-nonce
+             (clog-hypermedia:request-csp-nonce context))
+       (clog-hypermedia:html-response "ok")))
+    (let* ((application
+             (clog-hypermedia:make-hypermedia-application
+              :router router
+              :configuration
+              (clog-hypermedia:make-hypermedia-configuration
+               :static-prefix nil
+               :static-root nil
+               :request-id-generator
+               (deterministic-token-generator "request-nonce-test")
+               :csp-nonce-generator
+               (lambda ()
+                 (format nil "nonce-call-~D" (incf nonce-calls))))))
+           (response
+             (funcall (clog-hypermedia:application-handler application)
+                      (make-request-env :method :get :path "/nonce")))
+           (csp
+             (clack-response-header response :content-security-policy)))
+      (is (= 1 nonce-calls))
+      (is (string= "nonce-call-1" observed-nonce))
+      (is (search "'nonce-nonce-call-1'" csp))
+      (is (null (search "nonce-call-2" csp))))))
+
 (test application/session-persists-through-lack-middleware
   (let ((router (clog-hypermedia:make-router)))
     (clog-hypermedia:add-route
