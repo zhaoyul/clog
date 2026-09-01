@@ -210,6 +210,8 @@
                              (:file "htmx-attrs")
                              (:file "partials")
                              (:file "action-result")
+                             (:file "invalidation")
+                             (:file "transactions")
                              (:file "root-contract")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
