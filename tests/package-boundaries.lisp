@@ -246,6 +246,7 @@
     "MAKE-TRUSTED-HTML"
     "RENDER"
     "RENDER-ASSETS"
+    "RENDER-CHILD"
     "RENDER-CONTEXT"
     "RENDER-CONTEXT-APPLICATION"
     "RENDER-CONTEXT-ASSETS"
@@ -269,15 +270,18 @@
     "TRUSTED-HTML-P"
     "TRUSTED-HTML-STRING"
     "VALIDATE-COMPONENT-ROOT")
-  "Exact public asset, render-context, root-contract and Spinneret surface after HM-023.")
+  "Exact public asset, render-context, root-contract, child composition and Spinneret surface after HM-035.")
 
 (defparameter +component-public-api-export-snapshot+
   '(
+    "ADD-CHILD"
     "AFTER-MOUNT"
+    "ANCESTOR-P"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
     "COMPONENT"
     "COMPONENT-ASSETS"
+    "COMPONENT-CHILDREN"
     "COMPONENT-ERROR"
     "COMPONENT-ERROR-REASON"
     "COMPONENT-ID"
@@ -295,6 +299,7 @@
     "INVALID-COMPONENT-DEFINITION-REASON"
     "MOUNT-COMPONENT"
     "MOUNTED-P"
+    "REMOVE-CHILD"
     "RENDER-COMPONENT"
     "RENDER-METHOD-MISSING"
     "RENDER-METHOD-MISSING-CLASS"
@@ -302,15 +307,18 @@
     "TOUCH-COMPONENT"
     "UNMOUNT-COMPONENT"
     "VALIDATE-ACTION")
-  "Exact public component lifecycle and protocol surface after HM-020.")
+  "Exact public component lifecycle, protocol and composition surface after HM-035.")
 
 (defparameter +component-internal-core-export-snapshot+
   '(
+    "ADD-CHILD"
     "AFTER-MOUNT"
+    "ANCESTOR-P"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
     "COMPONENT"
     "COMPONENT-ASSETS"
+    "COMPONENT-CHILDREN"
     "COMPONENT-DIRTY-P"
     "COMPONENT-ERROR"
     "COMPONENT-ERROR-REASON"
@@ -335,6 +343,7 @@
     "INVALID-COMPONENT-DEFINITION-REASON"
     "MOUNT-COMPONENT"
     "MOUNTED-P"
+    "REMOVE-CHILD"
     "RENDER-COMPONENT"
     "RENDER-METHOD-MISSING"
     "RENDER-METHOD-MISSING-CLASS"
@@ -342,7 +351,7 @@
     "TOUCH-COMPONENT"
     "UNMOUNT-COMPONENT"
     "VALIDATE-ACTION")
-  "Exact internal component lifecycle surface after HM-020.")
+  "Exact internal component lifecycle and composition surface after HM-035.")
 
 (defparameter +action-api-export-snapshot+
   '(
@@ -453,7 +462,7 @@
   (sort (append (copy-list +component-internal-core-export-snapshot+)
                 (copy-list +component-store-api-export-snapshot+))
         #'string<)
-  "Exact internal component core and store surface after HM-021.")
+  "Exact internal component core, composition and store surface after HM-035.")
 
 (defparameter +htmx-api-export-snapshot+
   '("ACTION-ATTRS"
@@ -507,7 +516,7 @@
                 (copy-list +partials-api-export-snapshot+)
                 (copy-list +invalidation-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-034.")
+  "Exact combined public Hypermedia facade surface after HM-035.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -549,6 +558,7 @@
     "MAKE-TRUSTED-HTML"
     "RENDER"
     "RENDER-ASSETS"
+    "RENDER-CHILD"
     "RENDER-CONTEXT"
     "RENDER-CONTEXT-APPLICATION"
     "RENDER-CONTEXT-ASSETS"
@@ -575,14 +585,14 @@
     "TRUSTED-HTML-P"
     "TRUSTED-HTML-STRING"
     "VALIDATE-COMPONENT-ROOT")
-  "Exact internal asset, render-context, root-contract and Spinneret surface after HM-023.")
+  "Exact internal asset, render-context, root-contract, child composition and Spinneret surface after HM-035.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-034.")
+  "Facade export snapshots after HM-035.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -597,7 +607,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-034.")
+  "Internal package export snapshots after HM-035.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
