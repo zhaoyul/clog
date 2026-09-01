@@ -144,6 +144,10 @@
          store session-id (clog-hypermedia:component-id parent))
       (is (eq parent deleted))
       (is (eq :deleted status)))
+    ;; Cascade cleanup is part of DELETE-COMPONENT, not a lazy side effect of
+    ;; the next enumeration/load. The registry must be clean immediately.
+    (is (= 0 (getf (clog-hypermedia:component-store-stats store)
+                   :component-count)))
     (is (null (clog-hypermedia:enumerate-components store session-id)))
     (is (= 0 (getf (clog-hypermedia:component-store-stats store)
                    :component-count)))
