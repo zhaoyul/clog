@@ -56,6 +56,25 @@
            (setf start (+ position (length needle)))
         finally (return count)))
 
+(defun live-threads ()
+  "Return a fresh list of currently live Bordeaux Threads thread objects."
+  (remove-if-not #'bordeaux-threads:thread-alive-p
+                 (coerce (bordeaux-threads:all-threads) 'list)))
+
+(defun new-live-threads-since (before)
+  "Return currently live threads that were not present in BEFORE."
+  (set-difference (live-threads) before :test #'eq))
+
+(defun wait-for-threads-to-stop (threads &key (attempts 100) (pause 0.02))
+  "Wait for THREADS to become non-live, returning true before ATTEMPTS expires."
+  (loop repeat attempts
+        when (every (lambda (thread)
+                      (not (bordeaux-threads:thread-alive-p thread)))
+                    threads)
+          do (return t)
+        do (sleep pause)
+        finally (return nil)))
+
 (test counter/actions/increment-decrement-reset
   (let ((component
           (make-instance 'counter-component
@@ -76,6 +95,30 @@
            (is (= 0 (counter-value component))))
       (when (clog-hypermedia:mounted-p component)
         (clog-hypermedia:unmount-component component)))))
+
+(test counter/session/components-are-state-isolated
+  (let ((component-a
+          (make-instance 'counter-component
+                         :scope :session
+                         :owner-session-id "counter-session-a"))
+        (component-b
+          (make-instance 'counter-component
+                         :scope :session
+                         :owner-session-id "counter-session-b")))
+    (clog-hypermedia:mount-component component-a)
+    (clog-hypermedia:mount-component component-b)
+    (unwind-protect
+         (progn
+           (clog-hypermedia:handle-action component-a :increment nil)
+           (is (= 1 (counter-value component-a)))
+           (is (= 0 (counter-value component-b)))
+           (clog-hypermedia:handle-action component-b :decrement nil)
+           (is (= 1 (counter-value component-a)))
+           (is (= -1 (counter-value component-b))))
+      (when (clog-hypermedia:mounted-p component-a)
+        (clog-hypermedia:unmount-component component-a))
+      (when (clog-hypermedia:mounted-p component-b)
+        (clog-hypermedia:unmount-component component-b)))))
 
 (test counter/page/vendored-htmx-and-progressive-forms
   (let* ((application (make-counter-application))
@@ -107,8 +150,10 @@
             (make-get-env "/_clog/static/vendor/htmx/4.0.0/htmx.min.js"))))
     (is (= 200 (first response)))))
 
-(test counter/server/explicit-start-stop-and-random-port
-  (let ((server nil))
+(test counter/server/explicit-start-stop-random-port-and-thread-cleanup
+  (let ((server nil)
+        (before (live-threads))
+        (spawned nil))
     (unwind-protect
          (progn
            (setf server (start-counter :host "127.0.0.1" :port 0))
@@ -116,8 +161,11 @@
            (is (<= 1 (counter-server-port server) 65535))
            (is (search "http://127.0.0.1:"
                        (counter-server-url server)))
+           (setf spawned (new-live-threads-since before))
+           (is (plusp (length spawned)))
            (stop-counter server)
            (is-false (counter-server-running-p server))
+           (is (wait-for-threads-to-stop spawned))
            ;; Shutdown is deliberately idempotent for REPL cleanup paths.
            (stop-counter server)
            (is-false (counter-server-running-p server)))
