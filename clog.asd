@@ -156,7 +156,8 @@
                #:websocket-driver)
   :serial t
   :pathname "source/live/"
-  :components ((:file "packages")))
+  :components ((:file "packages")
+               (:file "queue")))
 
 (asdf:defsystem #:clog/presentations2
   :description "Experimental CLOG Presentations 2 package boundary"
