@@ -96,7 +96,6 @@
                (:file "clog-builder-project-tree")
                (:file "clog-builder-dir-tree")
                (:file "clog-builder-probe")
-               (:file "clog-builder-scope")
                (:file "clog-builder-repl")
                (:file "clog-builder-shell")
                (:file "clog-builder-search")
@@ -198,6 +197,7 @@
                (:module "hypermedia"
                 :components ((:file "request")
                              (:file "response")
+                             (:file "htmx")
                              (:file "router")
                              (:file "application")
                              (:file "assets")
