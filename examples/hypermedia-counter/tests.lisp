@@ -75,6 +75,34 @@
         do (sleep pause)
         finally (return nil)))
 
+(defun browser-e2e-enabled-p ()
+  "Return true when the real-browser HM-027 gate must execute in this process."
+  (or (string-equal "true" (or (uiop:getenv "GITHUB_ACTIONS") ""))
+      (member (string-downcase (or (uiop:getenv "CLOG_RUN_BROWSER_E2E") ""))
+              '("1" "true" "yes")
+              :test #'string=)))
+
+(defun run-browser-acceptance ()
+  "Start a real Counter server and execute the dependency-free WebDriver spec."
+  (let ((server nil))
+    (unwind-protect
+         (progn
+           (setf server (start-counter :host "127.0.0.1" :port 0))
+           (let ((script
+                   (asdf:system-relative-pathname
+                    :clog "tests/browser/counter.spec.py")))
+             (uiop:run-program
+              (list "python3"
+                    (namestring script)
+                    "--base-url"
+                    (counter-server-url server))
+              :output *standard-output*
+              :error-output *error-output*
+              :ignore-error-status nil))
+           t)
+      (when (and server (counter-server-running-p server))
+        (stop-counter server)))))
+
 (test counter/actions/increment-decrement-reset
   (let ((component
           (make-instance 'counter-component
@@ -167,11 +195,15 @@
            (stop-counter server)
            (is-false (counter-server-running-p server))
            (is (wait-for-threads-to-stop spawned))
-           ;; Shutdown is deliberately idempotent for REPL cleanup paths.
            (stop-counter server)
            (is-false (counter-server-running-p server)))
       (when (and server (counter-server-running-p server))
         (stop-counter server)))))
+
+(test counter/browser/real-chrome-js-on-js-off
+  (if (browser-e2e-enabled-p)
+      (is (run-browser-acceptance))
+      (is (not (browser-e2e-enabled-p)))))
 
 (defun run-tests ()
   "Run the HM-027 Counter FiveAM suite and signal on any failure."

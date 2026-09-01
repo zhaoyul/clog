@@ -47,24 +47,14 @@ hx-nonce="<request-csp-nonce>"
 
 ## 3. Session 隔离
 
-用两个独立浏览器 profile 或两个 Playwright BrowserContext 打开 `/counter`.
-
-例如:
+用两个独立浏览器 profile 或两个独立 WebDriver session 打开 `/counter`.
 
 ```text
 Session A: 0 -> +1 -> 1
 Session B: 0 -> -1 -> -1
 ```
 
-A 和 B 的值互不影响. Component ID 也是各自 session registry 中的独立对象. 这里验证的是完整链路:
-
-```text
-Lack session cookie
-  -> session component registry
-  -> session-scoped counter-component
-  -> action dispatch ownership check
-  -> fragment render
-```
+A 和 B 的值互不影响. Component ID 也是各自 session registry 中的独立对象.
 
 ## 4. 离线 HTMX 与 CSP
 
@@ -75,45 +65,17 @@ Lack session cookie
 /_clog/static/vendor/htmx/4.0.0/hx-csp.min.js
 ```
 
-这些文件来自仓库 `static-files/vendor/htmx/4.0.0/`.
-
-HTMX 4 的 `hx-csp` 扩展在 strict CSP 下会校验 HTMX 元素上的 nonce. 因此 Counter 不只给 script 标签加 CSP nonce, 还把每个请求上下文的 nonce 写入所有带 `hx-*` 的 form 的 `hx-nonce` 属性. Action fragment 使用 action 请求自己的 response nonce, `hx-csp` 再根据 response CSP header 将 fragment nonce 安全映射回当前页面 nonce. 缺少或不匹配的 nonce 会 fail closed, HTMX 属性不会被执行.
-
-可以用 curl 检查页面和本地静态资源. 将下面端口替换为 REPL 返回值:
-
-```bash
-curl -i http://127.0.0.1:49152/counter
-curl -i http://127.0.0.1:49152/_clog/static/vendor/htmx/4.0.0/htmx.min.js
-```
-
-响应页面应包含 `Content-Security-Policy`, `Cache-Control: no-store`, request id, CSRF meta 标签, `hx-nonce` 以及本地 HTMX `<script>`.
+HTMX 4 的 `hx-csp` 扩展会校验 HTMX 元素上的 nonce. Counter 把每个请求上下文的 nonce 写入所有带 `hx-*` 的 form 的 `hx-nonce` 属性. Action fragment 使用 action 请求自己的 response nonce, `hx-csp` 再根据 response CSP header 将 fragment nonce 安全映射回当前页面 nonce. 缺少或不匹配的 nonce 会 fail closed.
 
 ## 5. Component 与 Action
 
-Counter state 位于服务器端 `counter-component`:
+Counter state 位于服务器端 `counter-component`. 三个 mutation 使用 HM-024/HM-025 的静态 `DEFACTION` registry. Browser 只提交固定 action external-name 和表单数据, 不会把 Lisp symbol, function name 或 JavaScript source 当作运行时协议发送到服务器.
 
-```lisp
-(defclass counter-component (clog-hypermedia:component)
-  ((value :initform 0 :accessor counter-value)))
-```
-
-三个 mutation 使用 HM-024/HM-025 的静态 `DEFACTION` registry. Browser 只提交固定 action external-name 和表单数据, 不会把 Lisp symbol, function name 或 JavaScript source 当作运行时协议发送到服务器.
-
-每个 action form 还带有:
-
-```text
-_csrf_token
-_clog_revision
-_clog_return_to
-```
-
-CSRF 在 dispatch 之前由 Lack middleware 校验. `requires-current` action 使用 `_clog_revision` 防止 stale mutation.
+每个 action form 还带有 `_csrf_token`, `_clog_revision`, `_clog_return_to`. CSRF 在 dispatch 之前由 Lack middleware 校验. `requires-current` action 使用 `_clog_revision` 防止 stale mutation.
 
 ## 6. REPL 迭代
 
-这个示例的重点不是 Counter 本身, 而是验证新的开发模型. Component renderer 和 action 都是普通 Common Lisp method/function. 在开发 image 中重新编译相关定义后, 后续 HTTP/HTMX 请求直接使用新定义, 不需要把 arbitrary JavaScript 从服务器发送给浏览器执行.
-
-推荐观察顺序:
+Component renderer 和 action 都是普通 Common Lisp method/function. 在开发 image 中重新编译相关定义后, 后续 HTTP/HTMX 请求直接使用新定义, 不需要把 arbitrary JavaScript 从服务器发送给浏览器执行.
 
 ```text
 HTTP request
@@ -141,25 +103,35 @@ Common Lisp 测试:
 (asdf:test-system :clog/hypermedia-tests)
 ```
 
-真实 Chromium 验收需要先保持 Counter server 运行:
+在 GitHub Actions 中, Counter test-op 会自动启动随机端口的真实 Hunchentoot server, 再使用 Ubuntu runner 预装的 Chrome/Chromium + ChromeDriver 执行 `tests/browser/counter.spec.py`. Browser spec 只依赖 Python 标准库和 WebDriver HTTP 协议, 不需要安装 Playwright/Selenium Python package.
+
+本地要执行同一道 browser gate, 需要 Chrome 或 Chromium 以及匹配的 ChromeDriver:
 
 ```bash
-CLOG_COUNTER_URL=http://127.0.0.1:49152 \
-CHROMIUM_PATH=/usr/bin/chromium \
-python tests/browser/counter.spec.py
+CLOG_RUN_BROWSER_E2E=1 sbcl --non-interactive \
+  --eval '(ql:quickload :clog/hypermedia-counter-tests)' \
+  --eval '(asdf:test-system :clog/hypermedia-counter-tests)'
 ```
 
-Browser acceptance 同时执行:
+也可以先在 REPL 启动 Counter, 然后直接运行:
 
-1. JavaScript-on 页面上的 HTMX forms 通过 `hx-nonce` 获得 strict-CSP 授权.
-2. JavaScript-on HTMX action 不进行整页导航.
-3. Action request 带 `HX-Request: true`.
-4. Counter root ID 在 `outerMorph` 更新后保持稳定.
-5. 两个 BrowserContext 的 state 相互隔离.
-6. JavaScript-off 下 increment/decrement/reset 全部可用.
-7. JavaScript-off mutation 使用 PRG, reload 不重复 POST.
+```bash
+python3 tests/browser/counter.spec.py --base-url http://127.0.0.1:49152
+```
+
+如浏览器或 driver 不在 PATH, 可通过 `--browser` 和 `--driver` 显式指定.
+
+Browser acceptance 同时验证:
+
+1. JavaScript-on HTMX forms 具有 `hx-nonce`.
+2. JavaScript-on action 的真实网络请求携带 `HX-Request: true`.
+3. `outerMorph` 后 Counter root ID 保持稳定, 页面不发生整页导航.
+4. 两个独立 WebDriver session 的 state 相互隔离.
+5. JavaScript-off increment/decrement/reset 可用.
+6. JavaScript-off action 不携带 `HX-Request`, 网络日志出现 `303` PRG transition.
+7. Reload 不重复上一次 POST.
 8. HTMX script 来自 same-origin vendored path.
 
 ## 8. 当前边界
 
-HM-027 故意不实现 multi-target partial, typed action effects, UI transaction, child component tree, SSE 或 WebSocket. 这些能力从 HM-030 开始逐层加入. Counter 的任务是把 P0-P2 已完成的能力压成一个可运行、可测试、可阅读的参考应用, 而不是提前把后续阶段塞进示例.
+HM-027 故意不实现 multi-target partial, typed action effects, UI transaction, child component tree, SSE 或 WebSocket. 这些能力从 HM-030 开始逐层加入. Counter 的任务是把 P0-P2 已完成的能力压成一个可运行, 可测试, 可阅读的参考应用, 而不是提前把后续阶段塞进示例.
