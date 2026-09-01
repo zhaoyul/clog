@@ -143,7 +143,8 @@
                (:file "assets")
                (:file "application")
                (:file "render-context")
-               (:file "render")))
+               (:file "render")
+               (:file "htmx")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -211,4 +212,17 @@
              (uiop:load*
               (asdf:system-relative-pathname
                :clog "tests/hypermedia/action-dispatch.lisp"))
+             (uiop:load*
+              (asdf:system-relative-pathname
+               :clog "tests/hypermedia/no-js.lisp"))
              (uiop:symbol-call :clog-hypermedia-tests :run-all-tests)))
+
+
+(asdf:defsystem #:clog/hypermedia-counter-no-js
+  :description "HM-026 no-JavaScript progressive Counter slice"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia)
+  :serial t
+  :pathname "examples/hypermedia-counter/"
+  :components ((:file "no-js")))

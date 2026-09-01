@@ -30,7 +30,8 @@
       "assets"
       "application"
       "render-context"
-      "render")
+      "render"
+      "htmx")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
