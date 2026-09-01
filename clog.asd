@@ -213,6 +213,7 @@
                              (:file "action-result")
                              (:file "invalidation")
                              (:file "transactions")
+                             (:file "component-tree")
                              (:file "root-contract")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
