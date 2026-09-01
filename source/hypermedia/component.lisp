@@ -29,6 +29,10 @@
            #:component-lifecycle-state
            #:component-last-access
            #:component-lock
+           #:component-children
+           #:add-child
+           #:remove-child
+           #:ancestor-p
            #:mount-component
            #:unmount-component
            #:mounted-p
@@ -53,6 +57,10 @@
                 #:component-id
                 #:component-revision
                 #:component-lifecycle-state
+                #:component-children
+                #:add-child
+                #:remove-child
+                #:ancestor-p
                 #:mount-component
                 #:unmount-component
                 #:mounted-p
@@ -74,6 +82,10 @@
            #:component-id
            #:component-revision
            #:component-lifecycle-state
+           #:component-children
+           #:add-child
+           #:remove-child
+           #:ancestor-p
            #:mount-component
            #:unmount-component
            #:mounted-p
@@ -91,7 +103,7 @@
      (format stream "Hypermedia component operation failed~@[ (~A)~]."
              (component-error-reason condition))))
   (:documentation
-   "Base condition for component identity, lifecycle and protocol failures."))
+   "Base condition for component identity, lifecycle, composition and protocol failures."))
 
 (define-condition invalid-component-definition (component-error)
   ((definition-reason
@@ -102,10 +114,7 @@
      (format stream "Invalid component definition (~A)."
              (invalid-component-definition-reason condition))))
   (:documentation
-   "Signaled when a component is constructed or mounted with invalid identity, scope or ownership metadata.
-
-The condition intentionally stores only a bounded reason keyword. Session IDs
-and other owner values are not retained in the condition."))
+   "Signaled when a component is constructed or mounted with invalid identity, scope or ownership metadata."))
 
 (define-condition component-lifecycle-error (component-error)
   ((component-id
@@ -127,7 +136,7 @@ and other owner values are not retained in the condition."))
              (component-lifecycle-error-state condition)
              (component-lifecycle-error-reason condition))))
   (:documentation
-   "Signaled when a lifecycle transition is not permitted by the frozen created/mounted/unmounted state machine."))
+   "Signaled when a lifecycle transition is not permitted by the created/mounted/unmounted state machine."))
 
 (define-condition component-not-mounted (component-lifecycle-error)
   ()
@@ -159,18 +168,10 @@ and other owner values are not retained in the condition."))
 
 (defparameter *component-id-generator-lock*
   (bordeaux-threads:make-lock "clog-component-id-generator")
-  "Lock protecting the process-local random-state object used for ID creation.
-
-This lock is never used for component mutation, rendering or network I/O. It
-therefore cannot become an application-wide component/render lock.")
+  "Short-lived lock protecting the process-local component ID random state.")
 
 (defun default-component-id-generator ()
-  "Return a new UUID-style CLOG component ID containing 128 random bits.
-
-The generator consumes one value from a process-local random state while
-holding only the short-lived ID-generator lock. The resulting string has the
-frozen `clog-c-` plus 32 lowercase hexadecimal format. Component IDs are opaque
-identifiers, never authorization credentials."
+  "Return a new opaque CLOG component ID containing 128 random bits."
   (let ((value
           (bordeaux-threads:with-lock-held (*component-id-generator-lock*)
             (random +component-id-random-limit+
@@ -180,19 +181,13 @@ identifiers, never authorization credentials."
                  (string-downcase (format nil "~32,'0x" value)))))
 
 (defparameter *component-id-generator* #'default-component-id-generator
-  "Dynamically bindable component ID generator.
-
-Production code uses DEFAULT-COMPONENT-ID-GENERATOR. Tests may dynamically bind
-this special variable to a deterministic zero-argument function. Applications
-must not derive IDs from session IDs, user IDs or business keys.")
+  "Dynamically bindable component ID generator used by tests and production construction.")
 
 (defun lowercase-hex-character-p (character)
-  "Return true when CHARACTER is a lowercase hexadecimal digit."
   (or (char<= #\0 character #\9)
       (char<= #\a character #\f)))
 
 (defun valid-component-id-p (value)
-  "Return true when VALUE follows the frozen CLOG component ID format."
   (and (stringp value)
        (= (length value) 39)
        (string= +component-id-prefix+ value :end2 7)
@@ -200,7 +195,6 @@ must not derive IDs from session IDs, user IDs or business keys.")
              always (lowercase-hex-character-p (char value index)))))
 
 (defun opaque-owner-string-p (value)
-  "Return true for a non-empty owner/session identifier without control bytes."
   (and (stringp value)
        (plusp (length value))
        (every (lambda (character)
@@ -209,11 +203,10 @@ must not derive IDs from session IDs, user IDs or business keys.")
               value)))
 
 (defun copy-opaque-value (value)
-  "Copy mutable string VALUE while preserving other opaque values."
   (if (stringp value) (copy-seq value) value))
 
 (defun copy-hash-table-shallow (table)
-  "Return a shallow copy of TABLE without exposing its mutable registry object."
+  "Return a shallow defensive copy of TABLE."
   (let ((copy (make-hash-table :test (hash-table-test table)
                                :size (max 1 (hash-table-count table)))))
     (maphash (lambda (key value)
@@ -238,14 +231,17 @@ must not derive IDs from session IDs, user IDs or business keys.")
    (parent-id
     :initarg :parent-id
     :initform nil
-    :reader %component-parent-id)
+    :accessor %component-parent-id)
+   (parent
+    :initform nil
+    :accessor %component-parent)
    (owner-session-id
     :initarg :owner-session-id
     :initform nil
     :reader %component-owner-session-id)
    (children
-    :initform (make-hash-table :test #'equal)
-    :reader %component-children)
+    :initform nil
+    :accessor %component-children)
    (revision
     :initform 0
     :accessor %component-revision)
@@ -265,17 +261,7 @@ must not derive IDs from session IDs, user IDs or business keys.")
     :initform (make-hash-table :test #'equal)
     :reader %component-metadata))
   (:documentation
-   "Base server-side UI component with stable identity and per-instance synchronization.
-
-A component starts in :CREATED with revision zero and dirty state true. A
-successful MOUNT-COMPONENT transition makes it :MOUNTED. UNMOUNT-COMPONENT is
-terminal for HM-020 and changes it to :UNMOUNTED. TOUCH-COMPONENT records one
-committed state change by atomically increasing revision, marking the component
-dirty and refreshing its last-access timestamp.
-
-Each instance owns exactly one Bordeaux Threads lock. HM-020 lifecycle helpers
-never acquire two component locks at once and never perform rendering or network
-I/O while holding this lock."))
+   "Base server-side UI component with stable identity, copy-on-write child topology and per-instance synchronization."))
 
 (defmethod initialize-instance :after ((instance component) &key)
   "Validate and defensively freeze caller-provided component metadata."
@@ -299,86 +285,87 @@ I/O while holding this lock."))
       (error 'invalid-component-definition
              :reason :invalid-component-owner
              :definition-reason :invalid-component-owner)))
-  (setf (slot-value instance 'id) (copy-seq (%component-id instance)))
-  (setf (slot-value instance 'key) (copy-opaque-value (%component-key instance)))
+  (setf (slot-value instance 'id) (copy-seq (%component-id instance))
+        (slot-value instance 'key) (copy-opaque-value (%component-key instance)))
   (let ((parent-id (%component-parent-id instance)))
     (when parent-id
-      (setf (slot-value instance 'parent-id) (copy-seq parent-id))))
+      (setf (%component-parent-id instance) (copy-seq parent-id))))
   (let ((owner (%component-owner-session-id instance)))
     (when owner
       (setf (slot-value instance 'owner-session-id) (copy-seq owner)))))
 
 (defun component-id (instance)
-  "Return a fresh copy of INSTANCE's stable `clog-c-...` identifier.
-
-This function does not modify component state and does not acquire the component
-lock because the identity slot is immutable after initialization."
   (check-type instance component)
   (copy-seq (%component-id instance)))
 
 (defun component-key (instance)
-  "Return INSTANCE's optional application key, defensively copying string keys."
   (check-type instance component)
   (copy-opaque-value (%component-key instance)))
 
 (defun component-scope (instance)
-  "Return INSTANCE's lifecycle scope keyword.
-
-HM-020 recognizes :REQUEST, :SESSION, :APPLICATION and :PERSISTENT. The latter
-is a declared scope only; persistence itself is intentionally deferred."
   (check-type instance component)
   (%component-scope instance))
 
 (defun component-parent-id (instance)
-  "Return a fresh copy of INSTANCE's optional parent component ID."
   (check-type instance component)
   (let ((value (%component-parent-id instance)))
     (and value (copy-seq value))))
 
 (defun component-owner-session-id (instance)
-  "Return a fresh copy of INSTANCE's owner session ID, or NIL for public scopes.
-
-The value is an ownership namespace input for the later component store. It is
-not included in the component ID and is never treated as a browser-visible
-credential."
   (check-type instance component)
   (let ((value (%component-owner-session-id instance)))
     (and value (copy-seq value))))
 
 (defun component-revision (instance)
-  "Return INSTANCE's current committed non-negative revision snapshot.
-
-Writes occur only under COMPONENT-LOCK through TOUCH-COMPONENT in HM-020. Code
-requiring a multi-slot atomic snapshot may explicitly hold COMPONENT-LOCK before
-reading internal state; this reader itself never recursively acquires the lock."
   (check-type instance component)
   (%component-revision instance))
 
 (defun component-dirty-p (instance)
-  "Return true when INSTANCE has state requiring a future representation refresh."
   (check-type instance component)
   (%component-dirty-p instance))
 
 (defun component-lifecycle-state (instance)
-  "Return one of :CREATED, :MOUNTED or :UNMOUNTED for INSTANCE."
   (check-type instance component)
   (%component-lifecycle-state instance))
 
 (defun component-last-access (instance)
-  "Return INSTANCE's latest lifecycle/touch universal-time snapshot."
   (check-type instance component)
   (%component-last-access instance))
 
 (defun mounted-p (instance)
-  "Return true only while INSTANCE is in the :MOUNTED lifecycle state.
-
-This is a lock-free snapshot read. Lifecycle transitions themselves are
-serialized by INSTANCE's per-component lock."
   (check-type instance component)
   (eq :mounted (%component-lifecycle-state instance)))
 
+(defun component-children (instance)
+  "Return a fresh stable list of INSTANCE's exact direct child capabilities."
+  (check-type instance component)
+  (copy-list (%component-children instance)))
+
+(defun direct-child-p (parent child)
+  "Return true when CHILD is the exact currently attached direct child of PARENT."
+  (and (typep parent 'component)
+       (typep child 'component)
+       (eq (%component-parent child) parent)
+       (let ((parent-id (%component-parent-id child)))
+         (and parent-id (string= parent-id (%component-id parent))))
+       (member child (%component-children parent) :test #'eq)
+       t))
+
+(defun ancestor-p (ancestor descendant)
+  "Return true when ANCESTOR is in DESCENDANT's attached parent chain."
+  (check-type ancestor component)
+  (check-type descendant component)
+  (let ((cursor (%component-parent descendant))
+        (seen (make-hash-table :test #'eq)))
+    (loop while cursor
+          do (when (eq cursor ancestor) (return t))
+             (when (gethash cursor seen)
+               (error 'component-error :reason :component-parent-cycle))
+             (setf (gethash cursor seen) t
+                   cursor (%component-parent cursor))
+          finally (return nil))))
+
 (defun ensure-session-owner-for-mount (instance)
-  "Reject a session-scoped INSTANCE without an opaque owner session ID."
   (when (and (eq :session (%component-scope instance))
              (null (%component-owner-session-id instance)))
     (error 'invalid-component-definition
@@ -387,7 +374,6 @@ serialized by INSTANCE's per-component lock."
   t)
 
 (defun lifecycle-error (instance operation reason &optional condition-type)
-  "Signal a typed lifecycle condition for INSTANCE without exposing owner data."
   (error (or condition-type 'component-lifecycle-error)
          :reason reason
          :component-id (component-id instance)
@@ -395,18 +381,177 @@ serialized by INSTANCE's per-component lock."
          :state (%component-lifecycle-state instance)
          :lifecycle-reason reason))
 
+(defun composition-error (reason)
+  "Signal a bounded composition failure without exposing tree or session values."
+  (error 'component-error :reason reason))
+
+(defun topology-commit-no-lock (instance)
+  "Record one tree topology commit while INSTANCE's lock is already held."
+  (incf (%component-revision instance))
+  (setf (%component-dirty-p instance) t
+        (%component-last-access instance) (get-universal-time))
+  (%component-revision instance))
+
+(defun stable-unique-components (components)
+  "Return exact COMPONENTS sorted by component id, rejecting ID aliases."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (instance components)
+      (check-type instance component)
+      (let* ((id (%component-id instance))
+             (existing (gethash id table)))
+        (when (and existing (not (eq existing instance)))
+          (composition-error :component-identity-conflict))
+        (setf (gethash id table) instance)))
+    (let ((result nil))
+      (maphash (lambda (id instance)
+                 (declare (ignore id))
+                 (push instance result))
+               table)
+      (sort result #'string< :key #'%component-id))))
+
+(defun call-with-stable-component-locks (components thunk)
+  "Acquire exact COMPONENTS once in stable ID order, then call THUNK."
+  (labels ((acquire (remaining)
+             (if (null remaining)
+                 (funcall thunk)
+                 (bordeaux-threads:with-lock-held
+                     ((component-lock (first remaining)))
+                   (acquire (rest remaining))))))
+    (acquire (stable-unique-components components))))
+
+(defun parent-chain-snapshot (instance)
+  "Return INSTANCE through its attached parents, rejecting an existing cycle."
+  (let ((chain nil)
+        (cursor instance)
+        (seen (make-hash-table :test #'eq)))
+    (loop while cursor
+          do (when (gethash cursor seen)
+               (composition-error :component-parent-cycle))
+             (setf (gethash cursor seen) t)
+             (push cursor chain)
+             (setf cursor (%component-parent cursor)))
+    (nreverse chain)))
+
+(defun same-component-chain-p (left right)
+  (and (= (length left) (length right))
+       (every #'eq left right)))
+
+(defun ensure-composition-mounted (instance operation)
+  (unless (eq :mounted (%component-lifecycle-state instance))
+    (lifecycle-error instance operation :component-not-mounted 'component-not-mounted)))
+
+(defun session-composition-compatible-p (parent child)
+  "Return true when PARENT/CHILD can share one ownership namespace."
+  (let ((parent-session-p (eq :session (%component-scope parent)))
+        (child-session-p (eq :session (%component-scope child))))
+    (cond
+      ((or parent-session-p child-session-p)
+       (and parent-session-p
+            child-session-p
+            (%component-owner-session-id parent)
+            (%component-owner-session-id child)
+            (string= (%component-owner-session-id parent)
+                     (%component-owner-session-id child))))
+      (t t))))
+
+(defun child-with-id (parent child-id)
+  "Return the exact child with CHILD-ID in PARENT's immutable snapshot, or NIL."
+  (find child-id (%component-children parent)
+        :key #'%component-id :test #'string=))
+
+(defun sorted-child-snapshot-with (children child)
+  "Return a new sorted child snapshot containing exact CHILD once."
+  (sort (cons child (copy-list children)) #'string< :key #'%component-id))
+
+(defun child-snapshot-without (children child)
+  "Return a fresh child snapshot without exact CHILD."
+  (remove child children :test #'eq))
+
+(defun add-child (parent child)
+  "Attach mounted CHILD to mounted PARENT using stable component lock ordering."
+  (check-type parent component)
+  (check-type child component)
+  (when (eq parent child)
+    (composition-error :component-cycle))
+  (loop
+    for chain = (parent-chain-snapshot parent)
+    for retry = nil
+    for result = nil
+    do (call-with-stable-component-locks
+        (cons child chain)
+        (lambda ()
+          (if (not (same-component-chain-p chain (parent-chain-snapshot parent)))
+              (setf retry t)
+              (progn
+                (ensure-composition-mounted parent :add-child)
+                (ensure-composition-mounted child :add-child)
+                (unless (session-composition-compatible-p parent child)
+                  (composition-error :cross-session-child))
+                (when (member child chain :test #'eq)
+                  (composition-error :component-cycle))
+                (let* ((parent-id (%component-id parent))
+                       (child-parent (%component-parent child))
+                       (declared-parent-id (%component-parent-id child))
+                       (existing (child-with-id parent (%component-id child))))
+                  (when (and existing (not (eq existing child)))
+                    (composition-error :component-identity-conflict))
+                  (cond
+                    ((and (eq child-parent parent)
+                          existing
+                          (or (null declared-parent-id)
+                              (string= declared-parent-id parent-id)))
+                     (when (null declared-parent-id)
+                       (setf (%component-parent-id child) (copy-seq parent-id)))
+                     (setf result child))
+                    ((or child-parent
+                         (and declared-parent-id
+                              (not (string= declared-parent-id parent-id)))
+                         existing)
+                     (composition-error :child-already-owned))
+                    (t
+                     (setf (%component-children parent)
+                           (sorted-child-snapshot-with
+                            (%component-children parent) child)
+                           (%component-parent child) parent
+                           (%component-parent-id child) (copy-seq parent-id))
+                     (topology-commit-no-lock parent)
+                     (topology-commit-no-lock child)
+                     (setf result child))))))))
+       (unless retry (return result))))
+
+(defun remove-child (parent child)
+  "Detach exact CHILD from PARENT while leaving CHILD mounted."
+  (check-type parent component)
+  (check-type child component)
+  (call-with-stable-component-locks
+   (list parent child)
+   (lambda ()
+     (let* ((existing (child-with-id parent (%component-id child)))
+            (child-parent (%component-parent child))
+            (attached-p (and (eq child-parent parent) (eq existing child))))
+       (when (and existing (not (eq existing child)))
+         (composition-error :component-identity-conflict))
+       (cond
+         (attached-p
+          (ensure-composition-mounted parent :remove-child)
+          (ensure-composition-mounted child :remove-child)
+          (setf (%component-children parent)
+                (child-snapshot-without (%component-children parent) child)
+                (%component-parent child) nil
+                (%component-parent-id child) nil)
+          (topology-commit-no-lock parent)
+          (topology-commit-no-lock child)
+          child)
+         ((and child-parent (not (eq child-parent parent)))
+          (composition-error :child-owned-by-other-parent))
+         ((or existing
+              (and (%component-parent-id child)
+                   (string= (%component-parent-id child) (%component-id parent))))
+          (composition-error :component-topology-inconsistent))
+         (t child))))))
+
 (defun mount-component (instance)
-  "Transition INSTANCE from :CREATED to :MOUNTED and return two values.
-
-The primary value is INSTANCE. The secondary value is :MOUNTED for the first
-successful transition or :ALREADY-MOUNTED for an idempotent repeated call.
-Session-scoped components must already carry OWNER-SESSION-ID. Attempting to
-remount a terminal :UNMOUNTED component signals COMPONENT-LIFECYCLE-ERROR.
-
-Only INSTANCE's own lock is acquired, and no user hook, registry operation,
-rendering or network I/O occurs while it is held. AFTER-MOUNT orchestration is
-therefore left to the later store/application layer, matching the frozen
-mount -> register -> after-mount lifecycle order."
+  "Transition INSTANCE from :CREATED to :MOUNTED and return INSTANCE plus status."
   (check-type instance component)
   (bordeaux-threads:with-lock-held ((component-lock instance))
     (ecase (%component-lifecycle-state instance)
@@ -420,39 +565,108 @@ mount -> register -> after-mount lifecycle order."
       (:unmounted
        (lifecycle-error instance :mount :terminal-unmounted-state)))))
 
+(defun subtree-snapshot (root)
+  "Return a lock-free copy-on-write topology snapshot rooted at ROOT."
+  (let ((entries nil)
+        (seen (make-hash-table :test #'equal)))
+    (labels ((visit (node)
+               (let* ((id (%component-id node))
+                      (existing (gethash id seen)))
+                 (when existing
+                   (if (eq existing node)
+                       (composition-error :component-cycle)
+                       (composition-error :component-identity-conflict)))
+                 (setf (gethash id seen) node)
+                 (let ((children (copy-list (%component-children node))))
+                   (push (cons node children) entries)
+                   (dolist (child children)
+                     (visit child))))))
+      (visit root))
+    (nreverse entries)))
+
+(defun same-child-snapshot-p (left right)
+  (and (= (length left) (length right))
+       (every #'eq left right)))
+
+(defun subtree-snapshot-valid-p (entries external-parent root)
+  "Return true while ENTRIES still describe the exact attached subtree."
+  (and (eq (%component-parent root) external-parent)
+       (every
+        (lambda (entry)
+          (let ((parent (car entry))
+                (children (cdr entry)))
+            (and (same-child-snapshot-p children (%component-children parent))
+                 (every
+                  (lambda (child)
+                    (and (eq (%component-parent child) parent)
+                         (%component-parent-id child)
+                         (string= (%component-parent-id child)
+                                  (%component-id parent))))
+                  children))))
+        entries)))
+
+(defun snapshot-postorder (root entries)
+  "Return subtree nodes child-first according to the validated snapshot."
+  (let ((result nil))
+    (labels ((visit (node)
+               (let ((entry (find node entries :key #'car :test #'eq)))
+                 (unless entry
+                   (composition-error :component-topology-inconsistent))
+                 (dolist (child (cdr entry))
+                   (visit child))
+                 (push node result))))
+      (visit root))
+    (nreverse result)))
+
 (defun unmount-component (instance)
-  "Transition mounted INSTANCE to terminal :UNMOUNTED and return two values.
-
-The secondary value is :UNMOUNTED for the first transition and
-:ALREADY-UNMOUNTED for a repeated idempotent call. Unmounting a never-mounted
-:CREATED component signals COMPONENT-LIFECYCLE-ERROR. HM-020 does not yet own a
-registry or child tree, so BEFORE-UNMOUNT and recursive cleanup are orchestrated
-by the later store/composition tasks.
-
-Only INSTANCE's own component lock is acquired."
+  "Unmount INSTANCE and all attached descendants using stable subtree locking."
   (check-type instance component)
-  (bordeaux-threads:with-lock-held ((component-lock instance))
-    (ecase (%component-lifecycle-state instance)
-      (:created
-       (lifecycle-error instance :unmount :never-mounted))
-      (:mounted
-       (setf (%component-lifecycle-state instance) :unmounted
-             (%component-dirty-p instance) nil
-             (%component-last-access instance) (get-universal-time))
-       (values instance :unmounted))
-      (:unmounted
-       (values instance :already-unmounted)))))
+  (loop
+    for entries = (subtree-snapshot instance)
+    for external-parent = (%component-parent instance)
+    for nodes = (mapcar #'car entries)
+    for retry = nil
+    for outcome = nil
+    do (call-with-stable-component-locks
+        (if external-parent (cons external-parent nodes) nodes)
+        (lambda ()
+          (if (not (subtree-snapshot-valid-p entries external-parent instance))
+              (setf retry t)
+              (ecase (%component-lifecycle-state instance)
+                (:created
+                 (lifecycle-error instance :unmount :never-mounted))
+                (:unmounted
+                 (setf outcome (list instance :already-unmounted)))
+                (:mounted
+                 (dolist (node nodes)
+                   (when (eq :created (%component-lifecycle-state node))
+                     (composition-error :created-child-in-mounted-tree)))
+                 (when external-parent
+                   (let ((existing
+                           (child-with-id external-parent (%component-id instance))))
+                     (when (and existing (not (eq existing instance)))
+                       (composition-error :component-identity-conflict))
+                     (when (eq existing instance)
+                       (setf (%component-children external-parent)
+                             (child-snapshot-without
+                              (%component-children external-parent) instance))
+                       (when (mounted-p external-parent)
+                         (topology-commit-no-lock external-parent)))))
+                 (let ((now (get-universal-time)))
+                   (dolist (node (snapshot-postorder instance entries))
+                     (when (eq :mounted (%component-lifecycle-state node))
+                       (setf (%component-lifecycle-state node) :unmounted
+                             (%component-dirty-p node) nil
+                             (%component-last-access node) now))
+                     (setf (%component-children node) nil
+                           (%component-parent node) nil
+                           (%component-parent-id node) nil)))
+                 (setf outcome (list instance :unmounted)))))))
+       (unless retry
+         (return (values-list outcome)))))
 
 (defun touch-component (instance)
-  "Atomically record one committed state change on mounted INSTANCE.
-
-Under INSTANCE's per-component lock this function increments the non-negative
-revision exactly once, marks the component dirty and refreshes last-access.
-The new revision is returned. Calling it before mount or after unmount signals
-COMPONENT-NOT-MOUNTED.
-
-HM-020 never nests component locks. Later multi-component transactions must use
-the architecture's lexical COMPONENT-ID lock order rather than hash iteration."
+  "Atomically record one committed state change on mounted INSTANCE."
   (check-type instance component)
   (bordeaux-threads:with-lock-held ((component-lock instance))
     (unless (eq :mounted (%component-lifecycle-state instance))
@@ -482,4 +696,4 @@ the architecture's lexical COMPONENT-ID lock order rather than hash iteration."
 (setf (documentation 'render-method-missing-class 'function)
       "Return the class name for which no render method was available.")
 (setf (documentation 'component-lock 'function)
-      "Return INSTANCE's per-component Bordeaux Threads lock. Never acquire multiple component locks without stable component-id ordering.")
+      "Return INSTANCE's per-component Bordeaux Threads lock. Multi-component operations use stable component-id ordering.")

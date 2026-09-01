@@ -371,6 +371,20 @@ is started; SWEEP-COMPONENT-STORE is invoked by an owned lifecycle or job."
     (when (mounted-p component) (unmount-component component)))
   components)
 
+(defun prune-unusable-registry-components (registry session-id)
+  "Immediately remove unusable entries after an out-of-lock lifecycle cascade."
+  (bordeaux-threads:with-lock-held ((registry-lock registry))
+    (when (registry-active-p registry)
+      (let ((discard nil))
+        (maphash (lambda (id component)
+                   (unless (usable-p component session-id)
+                     (push id discard)))
+                 (registry-components registry))
+        (dolist (id discard)
+          (remhash id (registry-components registry))
+          (remhash id (registry-access-times registry)))
+        (length discard)))))
+
 (defmethod delete-component ((store memory-component-store) session-id component-id)
   (let ((session-id (checked-session-id session-id))
         (component-id (checked-component-id component-id))
@@ -393,6 +407,11 @@ is started; SWEEP-COMPONENT-STORE is invoked by an owned lifecycle or job."
              (if result
                  (progn
                    (unmount-outside-store-locks (list result))
+                   ;; UNMOUNT-COMPONENT may cascade through children that are
+                   ;; separately present in this same session registry. Re-enter
+                   ;; the registry only after all component locks are released and
+                   ;; remove those now-unusable descendants immediately.
+                   (prune-unusable-registry-components registry session-id)
                    (return (values result :deleted)))
                  (return (values nil :not-found))))))))
 

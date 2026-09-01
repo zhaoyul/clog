@@ -30,19 +30,24 @@
       "assets"
       "application"
       "render-context"
-      "render")
+      "render"
+      "htmx"
+      "partials"
+      "invalidation")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
       "CLOG-ACTION"
       "CLOG-RENDER"
       "CLOG-HTMX"
+      "CLOG-PARTIALS"
+      "CLOG-INVALIDATION"
       "CLOG-SESSION"
       "CLOG-HYPERMEDIA"))
     ("clog/live"
      ("clog/hypermedia" "websocket-driver")
-     ("packages")
-     ("CLOG-SSE" "CLOG-WS" "CLOG-EFFECT" "CLOG-LIVE"))
+     ("packages" "queue")
+     ("CLOG-LIVE-QUEUE" "CLOG-SSE" "CLOG-WS" "CLOG-EFFECT" "CLOG-LIVE"))
     ("clog/presentations2"
      ("clog/hypermedia")
      ("packages")
@@ -241,6 +246,7 @@
     "MAKE-TRUSTED-HTML"
     "RENDER"
     "RENDER-ASSETS"
+    "RENDER-CHILD"
     "RENDER-CONTEXT"
     "RENDER-CONTEXT-APPLICATION"
     "RENDER-CONTEXT-ASSETS"
@@ -264,15 +270,18 @@
     "TRUSTED-HTML-P"
     "TRUSTED-HTML-STRING"
     "VALIDATE-COMPONENT-ROOT")
-  "Exact public asset, render-context, root-contract and Spinneret surface after HM-023.")
+  "Exact public asset, render-context, root-contract, child composition and Spinneret surface after HM-035.")
 
 (defparameter +component-public-api-export-snapshot+
   '(
+    "ADD-CHILD"
     "AFTER-MOUNT"
+    "ANCESTOR-P"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
     "COMPONENT"
     "COMPONENT-ASSETS"
+    "COMPONENT-CHILDREN"
     "COMPONENT-ERROR"
     "COMPONENT-ERROR-REASON"
     "COMPONENT-ID"
@@ -290,6 +299,7 @@
     "INVALID-COMPONENT-DEFINITION-REASON"
     "MOUNT-COMPONENT"
     "MOUNTED-P"
+    "REMOVE-CHILD"
     "RENDER-COMPONENT"
     "RENDER-METHOD-MISSING"
     "RENDER-METHOD-MISSING-CLASS"
@@ -297,15 +307,18 @@
     "TOUCH-COMPONENT"
     "UNMOUNT-COMPONENT"
     "VALIDATE-ACTION")
-  "Exact public component lifecycle and protocol surface after HM-020.")
+  "Exact public component lifecycle, protocol and composition surface after HM-035.")
 
 (defparameter +component-internal-core-export-snapshot+
   '(
+    "ADD-CHILD"
     "AFTER-MOUNT"
+    "ANCESTOR-P"
     "AUTHORIZE-ACTION-P"
     "BEFORE-UNMOUNT"
     "COMPONENT"
     "COMPONENT-ASSETS"
+    "COMPONENT-CHILDREN"
     "COMPONENT-DIRTY-P"
     "COMPONENT-ERROR"
     "COMPONENT-ERROR-REASON"
@@ -330,6 +343,7 @@
     "INVALID-COMPONENT-DEFINITION-REASON"
     "MOUNT-COMPONENT"
     "MOUNTED-P"
+    "REMOVE-CHILD"
     "RENDER-COMPONENT"
     "RENDER-METHOD-MISSING"
     "RENDER-METHOD-MISSING-CLASS"
@@ -337,7 +351,7 @@
     "TOUCH-COMPONENT"
     "UNMOUNT-COMPONENT"
     "VALIDATE-ACTION")
-  "Exact internal component lifecycle surface after HM-020.")
+  "Exact internal component lifecycle and composition surface after HM-035.")
 
 (defparameter +action-api-export-snapshot+
   '(
@@ -371,17 +385,40 @@
     "ACTION-REGISTRY-DEVELOPMENT-P"
     "ACTION-REGISTRY-P"
     "ACTION-REPLACEMENT-NOT-ALLOWED"
+    "ACTION-RESULT"
+    "ACTION-RESULT-EFFECTS"
+    "ACTION-RESULT-FLASH"
+    "ACTION-RESULT-INVALIDATED-COMPONENTS"
+    "ACTION-RESULT-P"
+    "ACTION-RESULT-PRIMARY-COMPONENT"
+    "ACTION-RESULT-PUSH-URL"
+    "ACTION-RESULT-REDIRECT-URL"
+    "ACTION-RESULT-REPLACE-URL"
+    "ACTION-RESULT-RESPONSE-HEADERS"
+    "ACTION-RESULT-STATUS"
     "DEFACTION"
     "FIND-ACTION"
     "FIND-ACTION-DESCRIPTOR"
     "INVALID-ACTION-DEFINITION"
     "INVALID-ACTION-DEFINITION-REASON"
+    "INVALID-ACTION-RESULT"
     "LIST-ACTIONS"
     "MAKE-ACTION-DESCRIPTOR"
     "MAKE-ACTION-REGISTRY"
+    "MAKE-ACTION-RESULT"
+    "NO-RENDER"
+    "PUSH-URL"
+    "REDIRECT-TO"
     "REGISTER-ACTION"
-    )
-  "Exact static action descriptor, registry and DEFACTION surface after HM-024.")
+    "RENDER-COMPONENTS"
+    "RENDER-SELF"
+    "REPLACE-URL"
+    "WITH-EFFECT")
+  "Exact action registry and typed action-result surface after HM-033.")
+
+(defparameter +action-result-facade-api-export-snapshot+
+  '("ACTION-RESULT->RESPONSE")
+  "Facade-only HM-033 mapper from declarative action result to framework response.")
 
 (defparameter +component-store-api-export-snapshot+
   '(
@@ -425,7 +462,65 @@
   (sort (append (copy-list +component-internal-core-export-snapshot+)
                 (copy-list +component-store-api-export-snapshot+))
         #'string<)
-  "Exact internal component core and store surface after HM-021.")
+  "Exact internal component core, composition and store surface after HM-035.")
+
+(defparameter +htmx-api-export-snapshot+
+  '("ACTION-ATTRS"
+    "COMPONENT-ACTION-ATTRIBUTES"
+    "HX-ATTRS"
+    "HX-CURRENT-URL"
+    "HX-TARGET"
+    "HX-TRIGGER"
+    "INVALID-HTMX-ATTRIBUTE"
+    "INVALID-HTMX-ATTRIBUTE-REASON"
+    "MERGE-HTML-ATTRS"
+    "SET-HX-LOCATION"
+    "SET-HX-PUSH-URL"
+    "SET-HX-REDIRECT"
+    "SET-HX-REFRESH"
+    "SET-HX-REPLACE-URL"
+    "SET-HX-TRIGGER")
+  "Typed HTMX request/response and safe attribute helper surface after HM-031.")
+
+(defparameter +partials-api-export-snapshot+
+  '("MAKE-PARTIAL"
+    "PARTIAL"
+    "PARTIAL-COMPONENT"
+    "PARTIAL-COMPONENT-ID"
+    "PARTIAL-P"
+    "PARTIAL-REVISION"
+    "PARTIAL-SWAP"
+    "PARTIAL-TARGET"
+    "RENDER-PARTIAL"
+    "RENDER-PARTIALS")
+  "Typed HTMX 4 multi-target partial descriptor and renderer surface after HM-032.")
+
+(defparameter +invalidation-api-export-snapshot+
+  '("INVALIDATE-COMPONENT"
+    "UI-TRANSACTION-ERROR"
+    "UI-TRANSACTION-ERROR-REASON"
+    "WITH-UI-TRANSACTION")
+  "UI transaction and dirty invalidation surface after HM-034.")
+
+(defparameter +live-queue-api-export-snapshot+
+  '("BOUNDED-QUEUE"
+    "CANCEL-QUEUE-CANCELLATION"
+    "CLOSE-QUEUE"
+    "DEQUEUE"
+    "ENQUEUE"
+    "INVALID-QUEUE-CONFIGURATION"
+    "MAKE-BOUNDED-QUEUE"
+    "MAKE-QUEUE-CANCELLATION"
+    "QUEUE-CANCELLATION"
+    "QUEUE-CANCELLATION-CANCELLED-P"
+    "QUEUE-CAPACITY"
+    "QUEUE-CLOSED-P"
+    "QUEUE-ERROR"
+    "QUEUE-ERROR-REASON"
+    "QUEUE-OVERFLOW-POLICY"
+    "QUEUE-RESYNC-MARKER"
+    "QUEUE-SIZE")
+  "Bounded Live mailbox and cancellation surface after LV-040.")
 
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
@@ -434,10 +529,14 @@
                 (copy-list +rendering-api-export-snapshot+)
                 (copy-list +component-public-api-export-snapshot+)
                 (copy-list +action-api-export-snapshot+)
+                (copy-list +action-result-facade-api-export-snapshot+)
                 (copy-list +component-store-api-export-snapshot+)
-                (copy-list +session-integration-public-api-export-snapshot+))
+                (copy-list +session-integration-public-api-export-snapshot+)
+                (copy-list +htmx-api-export-snapshot+)
+                (copy-list +partials-api-export-snapshot+)
+                (copy-list +invalidation-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-024.")
+  "Exact combined public Hypermedia facade surface after HM-035.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -479,6 +578,7 @@
     "MAKE-TRUSTED-HTML"
     "RENDER"
     "RENDER-ASSETS"
+    "RENDER-CHILD"
     "RENDER-CONTEXT"
     "RENDER-CONTEXT-APPLICATION"
     "RENDER-CONTEXT-ASSETS"
@@ -505,14 +605,14 @@
     "TRUSTED-HTML-P"
     "TRUSTED-HTML-STRING"
     "VALIDATE-COMPONENT-ROOT")
-  "Exact internal asset, render-context, root-contract and Spinneret surface after HM-023.")
+  "Exact internal asset, render-context, root-contract, child composition and Spinneret surface after HM-035.")
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
-    ("CLOG-LIVE" nil)
+    ("CLOG-LIVE" ,+live-queue-api-export-snapshot+)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-024.")
+  "Facade export snapshots after LV-040.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -520,12 +620,15 @@
     ("CLOG-COMPONENT" ,+component-internal-api-export-snapshot+)
     ("CLOG-ACTION" ,+action-api-export-snapshot+)
     ("CLOG-RENDER" ,+render-api-export-snapshot+)
-    ("CLOG-HTMX" nil)
+    ("CLOG-HTMX" ,+htmx-api-export-snapshot+)
+    ("CLOG-PARTIALS" ,+partials-api-export-snapshot+)
+    ("CLOG-INVALIDATION" ,+invalidation-api-export-snapshot+)
     ("CLOG-SESSION" ,+session-api-export-snapshot+)
+    ("CLOG-LIVE-QUEUE" ,+live-queue-api-export-snapshot+)
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-024.")
+  "Internal package export snapshots after LV-040.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)

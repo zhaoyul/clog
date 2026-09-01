@@ -143,7 +143,10 @@
                (:file "assets")
                (:file "application")
                (:file "render-context")
-               (:file "render")))
+               (:file "render")
+               (:file "htmx")
+               (:file "partials")
+               (:file "invalidation")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -153,7 +156,8 @@
                #:websocket-driver)
   :serial t
   :pathname "source/live/"
-  :components ((:file "packages")))
+  :components ((:file "packages")
+               (:file "queue")))
 
 (asdf:defsystem #:clog/presentations2
   :description "Experimental CLOG Presentations 2 package boundary"
@@ -197,6 +201,7 @@
                (:module "hypermedia"
                 :components ((:file "request")
                              (:file "response")
+                             (:file "htmx")
                              (:file "router")
                              (:file "application")
                              (:file "assets")
@@ -204,11 +209,57 @@
                              (:file "action-registry")
                              (:file "component-store")
                              (:file "render")
+                             (:file "htmx-attrs")
+                             (:file "partials")
+                             (:file "action-result")
+                             (:file "invalidation")
+                             (:file "transactions")
+                             (:file "component-tree")
                              (:file "root-contract")))
+               (:module "live"
+                :components ((:file "queue")))
                (:file "package-boundaries"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clog/hypermedia-counter-tests")))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:load*
               (asdf:system-relative-pathname
                :clog "tests/hypermedia/action-dispatch.lisp"))
+             (uiop:load*
+              (asdf:system-relative-pathname
+               :clog "tests/hypermedia/no-js.lisp"))
              (uiop:symbol-call :clog-hypermedia-tests :run-all-tests)))
+
+(asdf:defsystem #:clog/hypermedia-counter-no-js
+  :description "HM-026 no-JavaScript progressive Counter slice"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia)
+  :serial t
+  :pathname "examples/hypermedia-counter/"
+  :components ((:file "no-js")))
+
+(asdf:defsystem #:clog/hypermedia-counter
+  :description "HM-027 end-to-end Hypermedia Counter vertical MVP"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia-counter-no-js)
+  :serial t
+  :pathname "examples/hypermedia-counter/"
+  :components ((:file "app"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clog/hypermedia-counter-tests"))))
+
+(asdf:defsystem #:clog/hypermedia-counter-tests
+  :description "HM-027 Counter unit, integration and lifecycle tests"
+  :author "CLOG contributors"
+  :license "BSD"
+  :depends-on (#:clog/hypermedia-counter
+               #:fiveam)
+  :serial t
+  :pathname "examples/hypermedia-counter/"
+  :components ((:file "tests"))
+  :perform (asdf:test-op (operation system)
+             (declare (ignore operation system))
+             (uiop:symbol-call :clog-hypermedia-counter-tests :run-tests)))
