@@ -293,7 +293,7 @@
                                (let ((size (clog-live:queue-size queue)))
                                  (when (> size capacity)
                                    (bordeaux-threads:with-lock-held (failure-lock)
-                                     (setf failure size)))))
+                                     (setf failure size))))))
                     :name "lv040-overflow-producer")))))
     (dolist (thread threads)
       (bordeaux-threads:join-thread thread))
