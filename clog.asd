@@ -215,6 +215,8 @@
                              (:file "transactions")
                              (:file "component-tree")
                              (:file "root-contract")))
+               (:module "live"
+                :components ((:file "queue")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clog/hypermedia-counter-tests")))
