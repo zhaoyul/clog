@@ -9,6 +9,7 @@
            #:component-root-attributes
            #:validate-component-root
            #:render
+           #:render-child
            #:render-page))
 
 (defpackage #:clog-hypermedia
@@ -19,6 +20,7 @@
                 #:component-root-attributes
                 #:validate-component-root
                 #:render
+                #:render-child
                 #:render-page)
   (:export #:render-contract-violation
            #:render-contract-violation-kind
@@ -26,6 +28,7 @@
            #:component-root-attributes
            #:validate-component-root
            #:render
+           #:render-child
            #:render-page))
 
 (in-package #:clog-render)
@@ -696,6 +699,30 @@ empty string. The function performs no response/network write."
       :unsupported-render-value
       nil
       context))))
+
+(defun render-child (child)
+  "Render direct CHILD inside the current parent using the exact render context.
+
+RENDER-CHILD is valid only while a mounted parent component is actively being
+rendered and CHILD is its exact direct child in the HM-035 copy-on-write tree.
+The child goes through ordinary RENDER, including its own lifecycle, purity and
+root-contract guards. The resulting server-authored fragment crosses the
+existing TRUSTED-HTML boundary before insertion into the current Spinneret
+stream; arbitrary caller HTML is never accepted."
+  (check-type child clog-component:component)
+  (let ((context (current-render-context))
+        (parent (current-render-component)))
+    (unless (and context parent)
+      (error 'invalid-render-context
+             :reason :render-child-outside-component
+             :component-id (clog-component:component-id child)
+             :request-id nil
+             :cause nil))
+    (unless (clog-component::direct-child-p parent child)
+      (signal-rendering-error
+       'rendering-error :render-child-not-direct-child child context))
+    (spinneret:html (make-trusted-html (render child context)))
+    (values)))
 
 (defun call-component-title (component context)
   "Read COMPONENT's optional title under the same pure-render guard."
