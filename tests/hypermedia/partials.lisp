@@ -130,11 +130,11 @@
   (let ((component
           (hm-032-mounted-application-component
            +hm-032-component-a+ "safe")))
-    (dolist (target '("#safe\" onclick=\"alert(1)"
-                      "#safe>script"
-                      "#safe\nother"
-                      "javascript:alert(1)"
-                      ""))
+    (dolist (target (list "#safe\" onclick=\"alert(1)"
+                          "#safe>script"
+                          (format nil "#safe~%other")
+                          "javascript:alert(1)"
+                          ""))
       (signals error
         (clog-hypermedia:make-partial component :target target)))
     (dolist (swap '("outerHTML"
