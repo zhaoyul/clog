@@ -157,7 +157,9 @@
   :serial t
   :pathname "source/live/"
   :components ((:file "packages")
-               (:file "queue")))
+               (:file "queue")
+               (:file "protocol")
+               (:file "event-bus")))
 
 (asdf:defsystem #:clog/presentations2
   :description "Experimental CLOG Presentations 2 package boundary"
