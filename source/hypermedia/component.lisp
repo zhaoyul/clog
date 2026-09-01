@@ -468,12 +468,7 @@
   (remove child children :test #'eq))
 
 (defun add-child (parent child)
-  "Attach mounted CHILD to mounted PARENT using stable component lock ordering.
-
-The exact repeated relation is idempotent. Session-scoped parent and child must
-belong to the same owner session. A child already owned by another parent, a
-component ID alias, self-parenting or any cycle fails closed. Successful topology
-changes advance both parent and child revisions exactly once."
+  "Attach mounted CHILD to mounted PARENT using stable component lock ordering."
   (check-type parent component)
   (check-type child component)
   (when (eq parent child)
@@ -485,50 +480,47 @@ changes advance both parent and child revisions exactly once."
     do (call-with-stable-component-locks
         (cons child chain)
         (lambda ()
-          (unless (same-component-chain-p chain (parent-chain-snapshot parent))
-            (setf retry t)
-            (return-from add-child nil))
-          (ensure-composition-mounted parent :add-child)
-          (ensure-composition-mounted child :add-child)
-          (unless (session-composition-compatible-p parent child)
-            (composition-error :cross-session-child))
-          (when (member child chain :test #'eq)
-            (composition-error :component-cycle))
-          (let* ((parent-id (%component-id parent))
-                 (child-parent (%component-parent child))
-                 (declared-parent-id (%component-parent-id child))
-                 (existing (child-with-id parent (%component-id child))))
-            (when (and existing (not (eq existing child)))
-              (composition-error :component-identity-conflict))
-            (cond
-              ((and (eq child-parent parent)
-                    existing
-                    (or (null declared-parent-id)
-                        (string= declared-parent-id parent-id)))
-               (when (null declared-parent-id)
-                 (setf (%component-parent-id child) (copy-seq parent-id)))
-               (setf result child))
-              ((or child-parent
-                   (and declared-parent-id
-                        (not (string= declared-parent-id parent-id)))
-                   existing)
-               (composition-error :child-already-owned))
-              (t
-               (setf (%component-children parent)
-                     (sorted-child-snapshot-with (%component-children parent) child)
-                     (%component-parent child) parent
-                     (%component-parent-id child) (copy-seq parent-id))
-               (topology-commit-no-lock parent)
-               (topology-commit-no-lock child)
-               (setf result child))))))
+          (if (not (same-component-chain-p chain (parent-chain-snapshot parent)))
+              (setf retry t)
+              (progn
+                (ensure-composition-mounted parent :add-child)
+                (ensure-composition-mounted child :add-child)
+                (unless (session-composition-compatible-p parent child)
+                  (composition-error :cross-session-child))
+                (when (member child chain :test #'eq)
+                  (composition-error :component-cycle))
+                (let* ((parent-id (%component-id parent))
+                       (child-parent (%component-parent child))
+                       (declared-parent-id (%component-parent-id child))
+                       (existing (child-with-id parent (%component-id child))))
+                  (when (and existing (not (eq existing child)))
+                    (composition-error :component-identity-conflict))
+                  (cond
+                    ((and (eq child-parent parent)
+                          existing
+                          (or (null declared-parent-id)
+                              (string= declared-parent-id parent-id)))
+                     (when (null declared-parent-id)
+                       (setf (%component-parent-id child) (copy-seq parent-id)))
+                     (setf result child))
+                    ((or child-parent
+                         (and declared-parent-id
+                              (not (string= declared-parent-id parent-id)))
+                         existing)
+                     (composition-error :child-already-owned))
+                    (t
+                     (setf (%component-children parent)
+                           (sorted-child-snapshot-with
+                            (%component-children parent) child)
+                           (%component-parent child) parent
+                           (%component-parent-id child) (copy-seq parent-id))
+                     (topology-commit-no-lock parent)
+                     (topology-commit-no-lock child)
+                     (setf result child))))))))
        (unless retry (return result))))
 
 (defun remove-child (parent child)
-  "Detach exact CHILD from PARENT while leaving CHILD mounted.
-
-The exact missing relation is idempotent. Removing a child owned by another
-parent or an inconsistent same-ID alias fails closed. Successful detach advances
-both mounted components' revisions exactly once."
+  "Detach exact CHILD from PARENT while leaving CHILD mounted."
   (check-type parent component)
   (check-type child component)
   (call-with-stable-component-locks
@@ -627,13 +619,7 @@ both mounted components' revisions exactly once."
     (nreverse result)))
 
 (defun unmount-component (instance)
-  "Unmount INSTANCE and all attached descendants using stable subtree locking.
-
-The whole copy-on-write subtree plus an attached external parent, when present,
-is locked in stable component-id order and revalidated before mutation. The
-terminal transition is applied child-first, all tree relations are cleared, and
-an attached external parent loses the root atomically. Repeated unmount is
-idempotent; unmounting a never-mounted component retains the HM-020 error."
+  "Unmount INSTANCE and all attached descendants using stable subtree locking."
   (check-type instance component)
   (loop
     for entries = (subtree-snapshot instance)
@@ -644,41 +630,38 @@ idempotent; unmounting a never-mounted component retains the HM-020 error."
     do (call-with-stable-component-locks
         (if external-parent (cons external-parent nodes) nodes)
         (lambda ()
-          (unless (subtree-snapshot-valid-p entries external-parent instance)
-            (setf retry t)
-            (return-from unmount-component nil))
-          (ecase (%component-lifecycle-state instance)
-            (:created
-             (lifecycle-error instance :unmount :never-mounted))
-            (:unmounted
-             (setf outcome (list instance :already-unmounted)))
-            (:mounted
-             ;; Validate before mutating so a malformed descendant cannot leave
-             ;; a half-transitioned tree.
-             (dolist (node nodes)
-               (when (eq :created (%component-lifecycle-state node))
-                 (composition-error :created-child-in-mounted-tree)))
-             (when external-parent
-               (let ((existing
-                       (child-with-id external-parent (%component-id instance))))
-                 (when (and existing (not (eq existing instance)))
-                   (composition-error :component-identity-conflict))
-                 (when (eq existing instance)
-                   (setf (%component-children external-parent)
-                         (child-snapshot-without
-                          (%component-children external-parent) instance))
-                   (when (mounted-p external-parent)
-                     (topology-commit-no-lock external-parent)))))
-             (let ((now (get-universal-time)))
-               (dolist (node (snapshot-postorder instance entries))
-                 (when (eq :mounted (%component-lifecycle-state node))
-                   (setf (%component-lifecycle-state node) :unmounted
-                         (%component-dirty-p node) nil
-                         (%component-last-access node) now))
-                 (setf (%component-children node) nil
-                       (%component-parent node) nil
-                       (%component-parent-id node) nil)))
-             (setf outcome (list instance :unmounted))))))
+          (if (not (subtree-snapshot-valid-p entries external-parent instance))
+              (setf retry t)
+              (ecase (%component-lifecycle-state instance)
+                (:created
+                 (lifecycle-error instance :unmount :never-mounted))
+                (:unmounted
+                 (setf outcome (list instance :already-unmounted)))
+                (:mounted
+                 (dolist (node nodes)
+                   (when (eq :created (%component-lifecycle-state node))
+                     (composition-error :created-child-in-mounted-tree)))
+                 (when external-parent
+                   (let ((existing
+                           (child-with-id external-parent (%component-id instance))))
+                     (when (and existing (not (eq existing instance)))
+                       (composition-error :component-identity-conflict))
+                     (when (eq existing instance)
+                       (setf (%component-children external-parent)
+                             (child-snapshot-without
+                              (%component-children external-parent) instance))
+                       (when (mounted-p external-parent)
+                         (topology-commit-no-lock external-parent)))))
+                 (let ((now (get-universal-time)))
+                   (dolist (node (snapshot-postorder instance entries))
+                     (when (eq :mounted (%component-lifecycle-state node))
+                       (setf (%component-lifecycle-state node) :unmounted
+                             (%component-dirty-p node) nil
+                             (%component-last-access node) now))
+                     (setf (%component-children node) nil
+                           (%component-parent node) nil
+                           (%component-parent-id node) nil)))
+                 (setf outcome (list instance :unmounted)))))))
        (unless retry
          (return (values-list outcome)))))
 
