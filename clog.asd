@@ -8,7 +8,7 @@
 
 (asdf:defsystem #:clog
   :description "CLOG - The Common Lisp Omnificent GUI"
-  :author "David Botton <david@botton.com>"
+  :author "David Botton <botton@botton.com>"
   :license  "BSD"
   :version "2.2"
   :serial t
@@ -209,6 +209,7 @@
                              (:file "render")
                              (:file "htmx-attrs")
                              (:file "partials")
+                             (:file "action-result")
                              (:file "root-contract")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
