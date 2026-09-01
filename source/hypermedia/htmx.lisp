@@ -2,7 +2,219 @@
 ;;;; CLOG 3 Hypermedia Runtime progressive HTMX / no-JavaScript policy     ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defpackage #:clog-htmx
+  (:export
+   #:hx-target
+   #:hx-trigger
+   #:hx-current-url
+   #:set-hx-trigger
+   #:set-hx-location
+   #:set-hx-redirect
+   #:set-hx-refresh
+   #:set-hx-push-url
+   #:set-hx-replace-url))
+
+(defpackage #:clog-hypermedia
+  (:import-from #:clog-htmx
+                #:hx-target
+                #:hx-trigger
+                #:hx-current-url
+                #:set-hx-trigger
+                #:set-hx-location
+                #:set-hx-redirect
+                #:set-hx-refresh
+                #:set-hx-push-url
+                #:set-hx-replace-url)
+  (:export
+   #:hx-target
+   #:hx-trigger
+   #:hx-current-url
+   #:set-hx-trigger
+   #:set-hx-location
+   #:set-hx-redirect
+   #:set-hx-refresh
+   #:set-hx-push-url
+   #:set-hx-replace-url))
+
 (in-package #:clog-htmx)
+
+(defun hx-target (context)
+  "Return a defensive copy of the normalized HX-Target request header, or NIL.
+
+CONTEXT is the immutable CLOG request context built by the HTTP kernel. Header
+name case folding and ownership are therefore inherited from HM-010 instead of
+being reimplemented at the HTMX boundary."
+  (clog-http:htmx-request-target context))
+
+(defun hx-trigger (context)
+  "Return a defensive copy of the normalized HX-Trigger request header, or NIL."
+  (clog-http:htmx-request-trigger context))
+
+(defun hx-current-url (context)
+  "Return a defensive copy of the normalized HX-Current-URL request header, or NIL."
+  (clog-http:request-current-url context))
+
+(defun response-without-header (headers name)
+  "Return a fresh alternating header list with every NAME entry removed."
+  (loop for (header value) on headers by #'cddr
+        unless (eq header name)
+          append (list header value)))
+
+(defun validate-hx-header-value (name value)
+  "Validate one HTMX response header through the HM-011 response boundary."
+  (unless (stringp value)
+    (error 'clog-http:invalid-response-header
+           :reason :non-string-htmx-header-value
+           :name name
+           :value value))
+  ;; MAKE-RESPONSE owns the canonical header-name/value and CRLF validation.
+  (clog-http:make-response :headers (list name value) :body "" :kind :html)
+  value)
+
+(defun set-hx-response-header (response name value)
+  "Replace NAME on RESPONSE with one validated string VALUE and return RESPONSE."
+  (check-type response clog-http:response)
+  (let ((stored-value (copy-seq (validate-hx-header-value name value))))
+    (setf (clog-http:response-headers response)
+          (append (response-without-header
+                   (clog-http:response-headers response)
+                   name)
+                  (list name stored-value))))
+  response)
+
+(defun validate-hx-local-url (url)
+  "Return an owned local URL after applying the HM-011 redirect safety policy.
+
+HTMX navigation/history headers are same-origin by default. Reusing
+REDIRECT-RESPONSE keeps protocol-relative paths, external origins, backslashes
+and control characters governed by the same fail-closed URL policy as ordinary
+HTTP redirects."
+  (clog-http:redirect-response url :status 303)
+  (copy-seq url))
+
+(defun hx-event-name-valid-p (name)
+  "Return true for a bounded non-empty event NAME without header controls."
+  (and (stringp name)
+       (plusp (length name))
+       (<= (length name) 256)
+       (every (lambda (character)
+                (let ((code (char-code character)))
+                  (and (>= code 32) (/= code 127))))
+              name)))
+
+(defun validate-hx-event-name (name)
+  "Return an owned event NAME or signal INVALID-RESPONSE-HEADER."
+  (unless (hx-event-name-valid-p name)
+    (error 'clog-http:invalid-response-header
+           :reason :invalid-hx-trigger-event-name
+           :name :hx-trigger
+           :value name))
+  (copy-seq name))
+
+(defun json-object-text-p (value)
+  "Return true when VALUE is text whose first/last non-space characters are braces."
+  (when (stringp value)
+    (let ((start (position-if-not
+                  (lambda (character)
+                    (member character '(#\Space #\Tab #\Newline #\Return)))
+                  value))
+          (end (position-if-not
+                (lambda (character)
+                  (member character '(#\Space #\Tab #\Newline #\Return)))
+                value :from-end t)))
+      (and start end
+           (char= (char value start) #\{)
+           (char= (char value end) #\})))))
+
+(defun valid-hx-event-alist-p (events)
+  "Return true when EVENTS is a Yason object alist with string keys."
+  (and (listp events)
+       (every (lambda (entry)
+                (and (consp entry) (stringp (car entry))))
+              events)))
+
+(defun signal-invalid-hx-trigger-json (value)
+  "Signal the typed response-header condition for malformed HX-Trigger JSON."
+  (error 'clog-http:invalid-response-header
+         :reason :invalid-hx-trigger-json
+         :name :hx-trigger
+         :value value))
+
+(defun parse-hx-trigger-events (response)
+  "Return RESPONSE's current HX-Trigger object as an ordered alist.
+
+Malformed or non-object pre-existing values fail closed. The adapter therefore
+never attempts to merge trusted generated JSON with an opaque hand-written
+header string."
+  (let ((value (clog-http:response-header response :hx-trigger nil)))
+    (if (null value)
+        nil
+        (handler-case
+            (progn
+              (unless (json-object-text-p value)
+                (signal-invalid-hx-trigger-json value))
+              (let ((events (yason:parse value :object-as :alist)))
+                (unless (valid-hx-event-alist-p events)
+                  (signal-invalid-hx-trigger-json value))
+                events))
+          (clog-http:invalid-response-header (condition)
+            (error condition))
+          (error ()
+            (signal-invalid-hx-trigger-json value))))))
+
+(defun merge-hx-trigger-event (events name payload)
+  "Return EVENTS with NAME set to PAYLOAD while preserving first insertion order."
+  (let ((existing (assoc name events :test #'string=)))
+    (if existing
+        (progn
+          (setf (cdr existing) payload)
+          events)
+        (append events (list (cons name payload))))))
+
+(defun encode-hx-trigger-events (events)
+  "Encode ordered event alist EVENTS as compact JSON using Yason."
+  (handler-case
+      (with-output-to-string (stream)
+        (yason:encode-alist events stream))
+    (error ()
+      (signal-invalid-hx-trigger-json nil))))
+
+(defun set-hx-trigger (response event-name &optional (payload yason:true))
+  "Merge EVENT-NAME and PAYLOAD into RESPONSE's JSON HX-Trigger header.
+
+One response always carries at most one HX-Trigger header. Multiple calls merge
+into one JSON object in first-insertion order; a repeated event name replaces
+its prior value. Yason performs all JSON quoting and escaping."
+  (check-type response clog-http:response)
+  (let* ((name (validate-hx-event-name event-name))
+         (events (parse-hx-trigger-events response))
+         (events (merge-hx-trigger-event events name payload))
+         (json (encode-hx-trigger-events events)))
+    (set-hx-response-header response :hx-trigger json)))
+
+(defun set-hx-url-header (response header-name url)
+  "Set one same-origin URL-bearing HTMX HEADER-NAME on RESPONSE."
+  (set-hx-response-header response header-name (validate-hx-local-url url)))
+
+(defun set-hx-location (response url)
+  "Set HX-Location to a validated same-origin local URL and return RESPONSE."
+  (set-hx-url-header response :hx-location url))
+
+(defun set-hx-redirect (response url)
+  "Set HX-Redirect to a validated same-origin local URL and return RESPONSE."
+  (set-hx-url-header response :hx-redirect url))
+
+(defun set-hx-refresh (response)
+  "Set the singleton HX-Refresh response header to `true` and return RESPONSE."
+  (set-hx-response-header response :hx-refresh "true"))
+
+(defun set-hx-push-url (response url)
+  "Set HX-Push-Url to a validated same-origin local URL and return RESPONSE."
+  (set-hx-url-header response :hx-push-url url))
+
+(defun set-hx-replace-url (response url)
+  "Set HX-Replace-Url to a validated same-origin local URL and return RESPONSE."
+  (set-hx-url-header response :hx-replace-url url))
 
 (defparameter +no-js-flash-session-key+ "_clog_flash"
   "Serializable one-shot flash-message key owned by the no-JavaScript fallback.")
