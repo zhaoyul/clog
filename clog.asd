@@ -157,7 +157,9 @@
   :serial t
   :pathname "source/live/"
   :components ((:file "packages")
-               (:file "queue")))
+               (:file "queue")
+               (:file "protocol")
+               (:file "event-bus")))
 
 (asdf:defsystem #:clog/presentations2
   :description "Experimental CLOG Presentations 2 package boundary"
@@ -217,7 +219,8 @@
                              (:file "component-tree")
                              (:file "root-contract")))
                (:module "live"
-                :components ((:file "queue")))
+                :components ((:file "queue")
+                             (:file "event-bus")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clog/hypermedia-counter-tests")))
