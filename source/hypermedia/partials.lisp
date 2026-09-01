@@ -351,3 +351,421 @@ an explicit HTTP 204 no-content response; a non-empty result contains only
                     (render-partial-descriptor (cdr candidate) context)
                     stream)))))
         (clog-http:html-response body))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; HM-033 typed action-result contract and response mapping              ;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defpackage #:clog-action
+  (:export
+   #:invalid-action-result
+   #:action-result #:action-result-p #:make-action-result
+   #:action-result-primary-component
+   #:action-result-invalidated-components
+   #:action-result-effects #:action-result-response-headers
+   #:action-result-push-url #:action-result-replace-url
+   #:action-result-redirect-url #:action-result-flash #:action-result-status
+   #:render-self #:render-components #:no-render
+   #:redirect-to #:push-url #:replace-url #:with-effect))
+
+(defpackage #:clog-hypermedia
+  (:import-from #:clog-action
+                #:invalid-action-result
+                #:action-result #:action-result-p #:make-action-result
+                #:action-result-primary-component
+                #:action-result-invalidated-components
+                #:action-result-effects #:action-result-response-headers
+                #:action-result-push-url #:action-result-replace-url
+                #:action-result-redirect-url #:action-result-flash
+                #:action-result-status
+                #:render-self #:render-components #:no-render
+                #:redirect-to #:push-url #:replace-url #:with-effect)
+  (:export
+   #:invalid-action-result
+   #:action-result #:action-result-p #:make-action-result
+   #:action-result-primary-component
+   #:action-result-invalidated-components
+   #:action-result-effects #:action-result-response-headers
+   #:action-result-push-url #:action-result-replace-url
+   #:action-result-redirect-url #:action-result-flash #:action-result-status
+   #:render-self #:render-components #:no-render
+   #:redirect-to #:push-url #:replace-url #:with-effect
+   #:action-result->response))
+
+(in-package #:clog-action)
+
+(defparameter +action-result-reserved-response-headers+
+  '(:content-type :content-length :location
+    :hx-trigger :hx-redirect :hx-location :hx-refresh
+    :hx-push-url :hx-replace-url)
+  "Response headers owned by the HM-033 mapper rather than business actions.")
+
+(defun action-result-proper-list-p (value)
+  "Return true when VALUE is a finite proper list."
+  (and (listp value)
+       (handler-case
+           (integerp (list-length value))
+         (type-error () nil))))
+
+(defun copy-action-result-value (value)
+  "Return a defensive copy for one mutable action-result metadata value."
+  (cond
+    ((stringp value) (copy-seq value))
+    ((consp value) (copy-tree value))
+    ((vectorp value) (copy-seq value))
+    (t value)))
+
+(defun copy-action-result-list (values)
+  "Return a fresh action-result list with mutable metadata values copied."
+  (and values (mapcar #'copy-action-result-value values)))
+
+(defun validate-action-result-header-list (headers)
+  "Validate business response HEADERS and return a defensively owned copy."
+  (unless (action-result-proper-list-p headers)
+    (error 'invalid-action-result :reason :malformed-response-headers))
+  (unless (evenp (length headers))
+    (error 'invalid-action-result :reason :malformed-response-headers))
+  (loop for (name value) on headers by #'cddr
+        do (unless (keywordp name)
+             (error 'invalid-action-result :reason :invalid-response-header-name))
+           (when (member name +action-result-reserved-response-headers+ :test #'eq)
+             (error 'invalid-action-result :reason :reserved-response-header)))
+  (clog-http:make-response :headers headers :body "" :kind :html)
+  (loop for (name value) on headers by #'cddr
+        append (list name (copy-action-result-value value))))
+
+(defun validate-action-result-primary (primary)
+  "Return PRIMARY when it is a supported action-result primary designator."
+  (unless (or (null primary)
+              (eq primary :current)
+              (typep primary 'clog-component:component))
+    (error 'invalid-action-result :reason :invalid-primary-component))
+  primary)
+
+(defun validate-action-result-partials (subjects)
+  "Return a fresh list of component/partial SUBJECTS accepted by HM-033."
+  (unless (action-result-proper-list-p subjects)
+    (error 'invalid-action-result :reason :malformed-invalidated-components))
+  (dolist (subject subjects)
+    (unless (or (typep subject 'clog-component:component)
+                (clog-partials:partial-p subject))
+      (error 'invalid-action-result :reason :invalid-partial-subject)))
+  (copy-list subjects))
+
+(defun validate-action-result-effects (effects)
+  "Return a fresh finite effect list without interpreting future typed effects."
+  (unless (action-result-proper-list-p effects)
+    (error 'invalid-action-result :reason :malformed-effects))
+  (copy-action-result-list effects))
+
+(defun validate-action-result-url-metadata (url reason)
+  "Return an owned URL string for later same-origin sink validation."
+  (when url
+    (unless (and (stringp url) (plusp (length url)) (<= (length url) 4096))
+      (error 'invalid-action-result :reason reason))
+    (copy-seq url)))
+
+(defun validate-action-result-flash (flash)
+  "Return an owned bounded flash string, or NIL."
+  (when flash
+    (unless (and (stringp flash) (plusp (length flash)) (<= (length flash) 1024))
+      (error 'invalid-action-result :reason :invalid-flash))
+    (copy-seq flash)))
+
+(defun validate-action-result-status (status)
+  "Return a successful HTTP STATUS accepted by the action-result contract."
+  (unless (and (integerp status) (<= 200 status 299))
+    (error 'invalid-action-result :reason :invalid-action-result-status))
+  status)
+
+(defun validate-action-result-combination
+    (primary partials push-url replace-url redirect-url status)
+  "Reject mutually exclusive action-result body/navigation combinations."
+  (when (and push-url replace-url)
+    (error 'invalid-action-result :reason :competing-history-mutations))
+  (when (and redirect-url
+             (or primary partials push-url replace-url))
+    (error 'invalid-action-result :reason :redirect-with-fragment-or-history))
+  (when (and (= status 204) (or primary partials redirect-url))
+    (error 'invalid-action-result :reason :no-content-with-body))
+  t)
+
+(defun validate-action-result (result)
+  "Revalidate RESULT at the response sink and return RESULT."
+  (unless (action-result-p result)
+    (error 'invalid-action-result :reason :action-result-required))
+  (let* ((primary
+           (validate-action-result-primary (%action-result-primary-component result)))
+         (partials
+           (validate-action-result-partials
+            (%action-result-invalidated-components result)))
+         (effects
+           (validate-action-result-effects (%action-result-effects result)))
+         (headers
+           (validate-action-result-header-list
+            (%action-result-response-headers result)))
+         (push-url
+           (validate-action-result-url-metadata
+            (%action-result-push-url result) :invalid-push-url))
+         (replace-url
+           (validate-action-result-url-metadata
+            (%action-result-replace-url result) :invalid-replace-url))
+         (redirect-url
+           (validate-action-result-url-metadata
+            (%action-result-redirect-url result) :invalid-redirect-url))
+         (flash (validate-action-result-flash (%action-result-flash result)))
+         (status (validate-action-result-status (%action-result-status result))))
+    (declare (ignore effects headers flash))
+    (validate-action-result-combination
+     primary partials push-url replace-url redirect-url status)
+    result))
+
+(defun make-action-result
+    (&key (primary-component :current)
+          invalidated-components effects response-headers
+          push-url replace-url redirect-url flash (status 200))
+  "Create a validated defensive HM-033 ACTION-RESULT value."
+  (let* ((primary (validate-action-result-primary primary-component))
+         (partials (validate-action-result-partials invalidated-components))
+         (effects (validate-action-result-effects effects))
+         (headers (validate-action-result-header-list response-headers))
+         (push-url (validate-action-result-url-metadata push-url :invalid-push-url))
+         (replace-url
+           (validate-action-result-url-metadata replace-url :invalid-replace-url))
+         (redirect-url
+           (validate-action-result-url-metadata redirect-url :invalid-redirect-url))
+         (flash (validate-action-result-flash flash))
+         (status (validate-action-result-status status)))
+    (validate-action-result-combination
+     primary partials push-url replace-url redirect-url status)
+    (%make-action-result
+     :primary-component primary
+     :invalidated-components partials
+     :effects effects
+     :response-headers headers
+     :push-url push-url
+     :replace-url replace-url
+     :redirect-url redirect-url
+     :flash flash
+     :status status)))
+
+(defun action-result-primary-component (result)
+  "Return RESULT's primary component designator."
+  (check-type result action-result)
+  (%action-result-primary-component result))
+
+(defun action-result-invalidated-components (result)
+  "Return a fresh list of RESULT's additional partial subjects."
+  (check-type result action-result)
+  (copy-list (%action-result-invalidated-components result)))
+
+(defun action-result-effects (result)
+  "Return a defensive copy of RESULT's browser effect declarations."
+  (check-type result action-result)
+  (copy-action-result-list (%action-result-effects result)))
+
+(defun action-result-response-headers (result)
+  "Return a defensive copy of RESULT's business response headers."
+  (check-type result action-result)
+  (loop for (name value) on (%action-result-response-headers result) by #'cddr
+        append (list name (copy-action-result-value value))))
+
+(defun action-result-push-url (result)
+  "Return an owned copy of RESULT's push URL, or NIL."
+  (check-type result action-result)
+  (let ((value (%action-result-push-url result)))
+    (and value (copy-seq value))))
+
+(defun action-result-replace-url (result)
+  "Return an owned copy of RESULT's replace URL, or NIL."
+  (check-type result action-result)
+  (let ((value (%action-result-replace-url result)))
+    (and value (copy-seq value))))
+
+(defun action-result-redirect-url (result)
+  "Return an owned copy of RESULT's HTMX redirect URL, or NIL."
+  (check-type result action-result)
+  (let ((value (%action-result-redirect-url result)))
+    (and value (copy-seq value))))
+
+(defun action-result-flash (result)
+  "Return an owned copy of RESULT's toast/flash message, or NIL."
+  (check-type result action-result)
+  (let ((value (%action-result-flash result)))
+    (and value (copy-seq value))))
+
+(defun action-result-status (result)
+  "Return RESULT's HTTP status."
+  (check-type result action-result)
+  (%action-result-status result))
+
+(defun render-self ()
+  "Declare that the current action component should be rendered."
+  (make-action-result))
+
+(defun no-render ()
+  "Declare successful action completion with no response body."
+  (make-action-result :primary-component nil :status 204))
+
+(defun render-components (&rest components)
+  "Declare a pure multi-target partial response for COMPONENTS."
+  (if components
+      (make-action-result
+       :primary-component nil
+       :invalidated-components components)
+      (no-render)))
+
+(defun redirect-to (url)
+  "Declare an HTMX same-origin redirect with no fragment body."
+  (make-action-result :primary-component nil :redirect-url url))
+
+(defun push-url (url)
+  "Render the current component and push URL into browser history."
+  (make-action-result :push-url url))
+
+(defun replace-url (url)
+  "Render the current component and replace the browser history URL."
+  (make-action-result :replace-url url))
+
+(defun with-effect (effect result)
+  "Return a new RESULT with EFFECT appended without mutating RESULT."
+  (validate-action-result result)
+  (make-action-result
+   :primary-component (%action-result-primary-component result)
+   :invalidated-components (%action-result-invalidated-components result)
+   :effects (append (%action-result-effects result) (list effect))
+   :response-headers (%action-result-response-headers result)
+   :push-url (%action-result-push-url result)
+   :replace-url (%action-result-replace-url result)
+   :redirect-url (%action-result-redirect-url result)
+   :flash (%action-result-flash result)
+   :status (%action-result-status result)))
+
+(defun valid-hm-025-action-result-p (result component)
+  "Accept structurally valid HM-033 results compatible with CURRENT COMPONENT."
+  (and (action-result-p result)
+       (handler-case
+           (progn
+             (validate-action-result result)
+             (let ((primary (%action-result-primary-component result)))
+               (or (null primary)
+                   (eq primary :current)
+                   (eq primary component))))
+         (invalid-action-result () nil)
+         (error () nil))))
+
+(in-package #:clog-hypermedia)
+
+(defun hm-033-render-context (application current-component request-context)
+  "Create the fragment render context shared by primary and partial mapping."
+  (check-type application hypermedia-application)
+  (check-type current-component clog-component:component)
+  (check-type request-context clog-http:request-context)
+  (clog-render:make-render-context
+   :request request-context
+   :application application
+   :mode :fragment
+   :primary-component-id (clog-component:component-id current-component)))
+
+(defun hm-033-resolve-primary-component (result current-component)
+  "Resolve RESULT's primary designator without permitting a foreign primary."
+  (let ((primary (clog-action::%action-result-primary-component result)))
+    (cond
+      ((null primary) nil)
+      ((eq primary :current) current-component)
+      ((eq primary current-component) current-component)
+      (t
+       (error 'clog-action:invalid-action-result
+              :reason :foreign-primary-component)))))
+
+(defun hm-033-subject-component-id (subject)
+  "Return SUBJECT's component id for primary/partial duplicate suppression."
+  (cond
+    ((typep subject 'clog-component:component)
+     (clog-component:component-id subject))
+    ((clog-partials:partial-p subject)
+     (clog-partials:partial-component-id subject))
+    (t nil)))
+
+(defun hm-033-filter-primary-from-partials (subjects primary)
+  "Return SUBJECTS without entries that target PRIMARY's component identity."
+  (if (null primary)
+      (copy-list subjects)
+      (let ((primary-id (clog-component:component-id primary)))
+        (remove-if
+         (lambda (subject)
+           (let ((id (hm-033-subject-component-id subject)))
+             (and id (string= id primary-id))))
+         subjects))))
+
+(defun hm-033-render-action-body
+    (result application current-component request-context)
+  "Return RESULT's deterministic fragment/partial response body string."
+  (let* ((render-context
+           (hm-033-render-context application current-component request-context))
+         (primary
+           (hm-033-resolve-primary-component result current-component))
+         (subjects
+           (hm-033-filter-primary-from-partials
+            (clog-action::%action-result-invalidated-components result)
+            primary))
+         (primary-body
+           (and primary (clog-render:render primary render-context)))
+         (partial-body
+           (when subjects
+             (clog-http:response-body
+              (clog-partials:render-partials subjects render-context)))))
+    (cond
+      ((and primary-body partial-body)
+       (concatenate 'string primary-body partial-body))
+      (primary-body primary-body)
+      (partial-body partial-body)
+      (t ""))))
+
+(defun hm-033-base-action-response
+    (result application current-component request-context)
+  "Build RESULT's body/status/custom-header response before HTMX metadata."
+  (let ((status (clog-action::%action-result-status result))
+        (headers (clog-action::%action-result-response-headers result)))
+    (if (= status 204)
+        (clog-http:no-content-response :status status :headers headers)
+        (clog-http:html-response
+         (hm-033-render-action-body
+          result application current-component request-context)
+         :status status
+         :headers headers))))
+
+(defun hm-033-apply-action-result-headers (response result)
+  "Apply navigation, toast and effect metadata through typed HTMX adapters."
+  (let ((push-url (clog-action::%action-result-push-url result))
+        (replace-url (clog-action::%action-result-replace-url result))
+        (redirect-url (clog-action::%action-result-redirect-url result))
+        (flash (clog-action::%action-result-flash result))
+        (effects (clog-action::%action-result-effects result)))
+    (when push-url
+      (clog-htmx:set-hx-push-url response push-url))
+    (when replace-url
+      (clog-htmx:set-hx-replace-url response replace-url))
+    (when redirect-url
+      (clog-htmx:set-hx-redirect response redirect-url))
+    (when flash
+      (clog-htmx:set-hx-trigger response "clog:toast" flash))
+    (when effects
+      (clog-htmx:set-hx-trigger response "clog:effects" effects)))
+  response)
+
+(defun action-result->response
+    (result application current-component request-context)
+  "Map declarative ACTION-RESULT to one validated framework RESPONSE."
+  (clog-action::validate-action-result result)
+  (check-type application hypermedia-application)
+  (check-type current-component clog-component:component)
+  (check-type request-context clog-http:request-context)
+  (hm-033-apply-action-result-headers
+   (hm-033-base-action-response
+    result application current-component request-context)
+   result))
+
+(defun hm-025-response-from-result (result application component context)
+  "HM-033 bridge: map the expanded typed result through the unified response sink."
+  (action-result->response result application component context))

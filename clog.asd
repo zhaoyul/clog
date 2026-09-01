@@ -209,6 +209,7 @@
                              (:file "render")
                              (:file "htmx-attrs")
                              (:file "partials")
+                             (:file "action-result")
                              (:file "root-contract")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op

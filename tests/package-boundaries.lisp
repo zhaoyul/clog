@@ -374,17 +374,40 @@
     "ACTION-REGISTRY-DEVELOPMENT-P"
     "ACTION-REGISTRY-P"
     "ACTION-REPLACEMENT-NOT-ALLOWED"
+    "ACTION-RESULT"
+    "ACTION-RESULT-EFFECTS"
+    "ACTION-RESULT-FLASH"
+    "ACTION-RESULT-INVALIDATED-COMPONENTS"
+    "ACTION-RESULT-P"
+    "ACTION-RESULT-PRIMARY-COMPONENT"
+    "ACTION-RESULT-PUSH-URL"
+    "ACTION-RESULT-REDIRECT-URL"
+    "ACTION-RESULT-REPLACE-URL"
+    "ACTION-RESULT-RESPONSE-HEADERS"
+    "ACTION-RESULT-STATUS"
     "DEFACTION"
     "FIND-ACTION"
     "FIND-ACTION-DESCRIPTOR"
     "INVALID-ACTION-DEFINITION"
     "INVALID-ACTION-DEFINITION-REASON"
+    "INVALID-ACTION-RESULT"
     "LIST-ACTIONS"
     "MAKE-ACTION-DESCRIPTOR"
     "MAKE-ACTION-REGISTRY"
+    "MAKE-ACTION-RESULT"
+    "NO-RENDER"
+    "PUSH-URL"
+    "REDIRECT-TO"
     "REGISTER-ACTION"
-    )
-  "Exact static action descriptor, registry and DEFACTION surface after HM-024.")
+    "RENDER-COMPONENTS"
+    "RENDER-SELF"
+    "REPLACE-URL"
+    "WITH-EFFECT")
+  "Exact action registry and typed action-result surface after HM-033.")
+
+(defparameter +action-result-facade-api-export-snapshot+
+  '("ACTION-RESULT->RESPONSE")
+  "Facade-only HM-033 mapper from declarative action result to framework response.")
 
 (defparameter +component-store-api-export-snapshot+
   '(
@@ -468,12 +491,13 @@
                 (copy-list +rendering-api-export-snapshot+)
                 (copy-list +component-public-api-export-snapshot+)
                 (copy-list +action-api-export-snapshot+)
+                (copy-list +action-result-facade-api-export-snapshot+)
                 (copy-list +component-store-api-export-snapshot+)
                 (copy-list +session-integration-public-api-export-snapshot+)
                 (copy-list +htmx-api-export-snapshot+)
                 (copy-list +partials-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-032.")
+  "Exact combined public Hypermedia facade surface after HM-033.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -548,7 +572,7 @@
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-032.")
+  "Facade export snapshots after HM-033.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -562,7 +586,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-032.")
+  "Internal package export snapshots after HM-033.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
