@@ -4,6 +4,8 @@
 
 (defpackage #:clog-htmx
   (:export
+   #:invalid-htmx-attribute
+   #:invalid-htmx-attribute-reason
    #:hx-target
    #:hx-trigger
    #:hx-current-url
@@ -12,10 +14,16 @@
    #:set-hx-redirect
    #:set-hx-refresh
    #:set-hx-push-url
-   #:set-hx-replace-url))
+   #:set-hx-replace-url
+   #:hx-attrs
+   #:action-attrs
+   #:merge-html-attrs
+   #:component-action-attributes))
 
 (defpackage #:clog-hypermedia
   (:import-from #:clog-htmx
+                #:invalid-htmx-attribute
+                #:invalid-htmx-attribute-reason
                 #:hx-target
                 #:hx-trigger
                 #:hx-current-url
@@ -24,8 +32,14 @@
                 #:set-hx-redirect
                 #:set-hx-refresh
                 #:set-hx-push-url
-                #:set-hx-replace-url)
+                #:set-hx-replace-url
+                #:hx-attrs
+                #:action-attrs
+                #:merge-html-attrs
+                #:component-action-attributes)
   (:export
+   #:invalid-htmx-attribute
+   #:invalid-htmx-attribute-reason
    #:hx-target
    #:hx-trigger
    #:hx-current-url
@@ -34,9 +48,32 @@
    #:set-hx-redirect
    #:set-hx-refresh
    #:set-hx-push-url
-   #:set-hx-replace-url))
+   #:set-hx-replace-url
+   #:hx-attrs
+   #:action-attrs
+   #:merge-html-attrs
+   #:component-action-attributes))
 
 (in-package #:clog-htmx)
+
+(define-condition invalid-htmx-attribute (clog-http:clog-hypermedia-error)
+  ((reason
+    :initarg :reason
+    :initform nil
+    :reader invalid-htmx-attribute-reason))
+  (:report
+   (lambda (condition stream)
+     (format stream "Invalid HTMX attribute input~@[ (~A)~]."
+             (invalid-htmx-attribute-reason condition))))
+  (:documentation
+   "Fail-closed condition for typed HTMX attribute helper input.
+
+Reports intentionally omit attribute values so malformed user-derived data is
+not copied into logs or diagnostics by default."))
+
+(defun invalid-htmx-attribute (reason)
+  "Signal INVALID-HTMX-ATTRIBUTE with bounded symbolic REASON."
+  (error 'invalid-htmx-attribute :reason reason))
 
 (defun hx-target (context)
   "Return a defensive copy of the normalized HX-Target request header, or NIL.
@@ -215,6 +252,302 @@ its prior value. Yason performs all JSON quoting and escaping."
 (defun set-hx-replace-url (response url)
   "Set HX-Replace-Url to a validated same-origin local URL and return RESPONSE."
   (set-hx-url-header response :hx-replace-url url))
+
+(defparameter +allowed-hx-swaps+
+  '("innerHTML" "outerHTML" "textContent"
+    "beforebegin" "afterbegin" "beforeend" "afterend"
+    "delete" "none" "innerMorph" "outerMorph")
+  "Closed swap vocabulary exposed by the HM-031 typed attribute helper.")
+
+(defun safe-hx-attribute-string-p (value &key (maximum-length 4096))
+  "Return true for bounded attribute text without ASCII control characters."
+  (and (stringp value)
+       (plusp (length value))
+       (<= (length value) maximum-length)
+       (every (lambda (character)
+                (let ((code (char-code character)))
+                  (and (>= code 32) (/= code 127))))
+              value)))
+
+(defun validate-hx-target-attribute (target)
+  "Return an owned HTMX target selector or signal INVALID-HTMX-ATTRIBUTE."
+  (unless (safe-hx-attribute-string-p target)
+    (invalid-htmx-attribute :invalid-hx-target))
+  (copy-seq target))
+
+(defun validate-hx-swap-attribute (swap)
+  "Return an owned swap name from the closed framework vocabulary."
+  (unless (and (safe-hx-attribute-string-p swap :maximum-length 64)
+               (member swap +allowed-hx-swaps+ :test #'string=))
+    (invalid-htmx-attribute :invalid-hx-swap))
+  (copy-seq swap))
+
+(defun validate-hx-nonce-attribute (nonce)
+  "Return an owned bounded CSP nonce without whitespace or controls."
+  (unless (and (stringp nonce)
+               (plusp (length nonce))
+               (<= (length nonce) 512)
+               (every (lambda (character)
+                        (let ((code (char-code character)))
+                          (and (> code 32) (/= code 127))))
+                      nonce))
+    (invalid-htmx-attribute :invalid-hx-nonce))
+  (copy-seq nonce))
+
+(defun valid-json-attribute-alist-p (value)
+  "Return true for a deterministic proper alist with unique string keys."
+  (and (listp value)
+       (let ((length (handler-case (list-length value)
+                       (type-error () nil))))
+         (and length
+              (let ((seen (make-hash-table :test #'equal)))
+                (every
+                 (lambda (entry)
+                   (and (consp entry)
+                        (stringp (car entry))
+                        (not (gethash (car entry) seen))
+                        (progn
+                          (setf (gethash (car entry) seen) t)
+                          t)))
+                 value))))))
+
+(defun encode-hx-vals (value)
+  "Serialize structured VALUE as a compact JSON object for hx-vals."
+  (unless (valid-json-attribute-alist-p value)
+    (invalid-htmx-attribute :invalid-hx-vals))
+  (handler-case
+      (with-output-to-string (stream)
+        (yason:encode-alist value stream))
+    (error ()
+      (invalid-htmx-attribute :invalid-hx-vals))))
+
+(defun string-prefix-equal-p (prefix value)
+  "Return true when string VALUE begins with PREFIX, case-insensitively."
+  (and (stringp value)
+       (<= (length prefix) (length value))
+       (string-equal prefix value :end2 (length prefix))))
+
+(defun raw-javascript-attribute-value-p (value)
+  "Return true for HTMX raw JavaScript expression prefixes."
+  (when (stringp value)
+    (let ((trimmed (string-left-trim '(#\Space #\Tab #\Newline #\Return) value)))
+      (or (string-prefix-equal-p "js:" trimmed)
+          (string-prefix-equal-p "javascript:" trimmed)))))
+
+(defun forbidden-event-attribute-p (name)
+  "Return true for inline HTML/HTMX event-handler attribute names."
+  (when (keywordp name)
+    (let ((text (symbol-name name)))
+      (or (and (> (length text) 2)
+               (string= "ON" text :end2 2))
+          (string-prefix-equal-p "HX-ON" text)))))
+
+(defun proper-even-attribute-plist-p (value)
+  "Return true when VALUE is a finite proper even-length plist."
+  (and (listp value)
+       (let ((length (handler-case (list-length value)
+                       (type-error () nil))))
+         (and length (evenp length)))))
+
+(defun plist-key-present-p (plist key)
+  "Return true when keyword KEY occurs as a name position in PLIST."
+  (loop for tail on plist by #'cddr
+        thereis (eq (car tail) key)))
+
+(defun html-space-p (character)
+  "Return true for HTML whitespace used when tokenizing class values."
+  (member character '(#\Space #\Tab #\Newline #\Return #\Page)
+          :test #'char=))
+
+(defun class-tokens (value)
+  "Return non-empty whitespace-separated class tokens in source order."
+  (unless (stringp value)
+    (invalid-htmx-attribute :invalid-class-attribute))
+  (let ((tokens nil)
+        (start nil))
+    (labels ((finish-token (end)
+               (when start
+                 (push (subseq value start end) tokens)
+                 (setf start nil))))
+      (loop for index from 0 below (length value)
+            for character = (char value index)
+            do (if (html-space-p character)
+                   (finish-token index)
+                   (unless start (setf start index))))
+      (finish-token (length value)))
+    (nreverse tokens)))
+
+(defun merge-class-values (left right)
+  "Return deterministic first-seen union of class tokens from LEFT and RIGHT."
+  (let ((tokens nil))
+    (dolist (token (append (class-tokens left) (class-tokens right)))
+      (unless (member token tokens :test #'string=)
+        (setf tokens (append tokens (list token)))))
+    (format nil "~{~A~^ ~}" tokens)))
+
+(defun safe-generic-attribute-value (name value)
+  "Return an owned scalar VALUE after enforcing JavaScript-free attribute policy."
+  (when (forbidden-event-attribute-p name)
+    (invalid-htmx-attribute :inline-event-handler-forbidden))
+  (when (and (eq name :hx-vals)
+             (raw-javascript-attribute-value-p value))
+    (invalid-htmx-attribute :raw-javascript-hx-vals-forbidden))
+  (cond
+    ((stringp value) (copy-seq value))
+    ((or (null value) (numberp value) (symbolp value)) value)
+    (t (invalid-htmx-attribute :invalid-html-attribute-value))))
+
+(defun merge-html-attrs (&rest attribute-plists)
+  "Merge Spinneret-compatible ATTRIBUTE-PLISTS with a fail-closed policy.
+
+`:class` is the only token attribute merged by HM-031; its tokens are unioned
+in first-seen order. Every other duplicate attribute is rejected. Inline event
+handler attributes and raw `js:` / `javascript:` hx-vals expressions are also
+rejected. The returned plist owns all mutable strings."
+  (let ((result nil))
+    (dolist (attributes attribute-plists)
+      (unless (proper-even-attribute-plist-p attributes)
+        (invalid-htmx-attribute :malformed-html-attribute-plist))
+      (loop for (name value) on attributes by #'cddr
+            do (unless (keywordp name)
+                 (invalid-htmx-attribute :non-keyword-html-attribute))
+               (if (plist-key-present-p result name)
+                   (if (eq name :class)
+                       (setf (getf result :class)
+                             (merge-class-values (getf result :class) value))
+                       (invalid-htmx-attribute :duplicate-html-attribute))
+                   (setf result
+                         (append result
+                                 (list name
+                                       (if (eq name :class)
+                                           (format nil "~{~A~^ ~}"
+                                                   (class-tokens value))
+                                           (safe-generic-attribute-value
+                                            name value))))))))
+    result))
+
+(defun hx-attrs (&key post target swap (vals nil vals-supplied-p) nonce)
+  "Return a deterministic Spinneret `:attrs` plist for typed HTMX attributes.
+
+POST is validated by the existing HM-030 same-origin URL policy. VALS must be a
+structured alist with unique string keys and is always serialized by Yason; raw
+JavaScript expressions are not accepted as an alternate form."
+  (let ((attributes nil))
+    (when post
+      (setf attributes
+            (append attributes
+                    (list :hx-post (validate-hx-local-url post)))))
+    (when target
+      (setf attributes
+            (append attributes
+                    (list :hx-target (validate-hx-target-attribute target)))))
+    (when swap
+      (setf attributes
+            (append attributes
+                    (list :hx-swap (validate-hx-swap-attribute swap)))))
+    (when vals-supplied-p
+      (setf attributes
+            (append attributes
+                    (list :hx-vals (encode-hx-vals vals)))))
+    (when nonce
+      (setf attributes
+            (append attributes
+                    (list :hx-nonce (validate-hx-nonce-attribute nonce)))))
+    attributes))
+
+(defun normalize-action-prefix (prefix)
+  "Return a validated same-origin action PREFIX without trailing slash."
+  (let ((validated (validate-hx-local-url prefix)))
+    (when (or (find #\? validated) (find #\# validated))
+      (invalid-htmx-attribute :invalid-action-prefix))
+    (string-right-trim '(#\/) validated)))
+
+(defun encode-action-segment (segment)
+  "Percent-encode one action route SEGMENT without allowing path structure."
+  (unless (safe-hx-attribute-string-p segment :maximum-length 4096)
+    (invalid-htmx-attribute :invalid-action-path-segment))
+  (quri:url-encode segment))
+
+(defun action-url (action-prefix component-segment action-segment)
+  "Build one local action endpoint with independently encoded path segments."
+  (let ((prefix (normalize-action-prefix action-prefix)))
+    (format nil "~A/~A/~A"
+            prefix
+            (encode-action-segment component-segment)
+            (encode-action-segment action-segment))))
+
+(defun action-attrs
+    (action-prefix component-segment action-segment
+     &key target (swap "outerMorph") (vals nil vals-supplied-p) nonce)
+  "Return native progressive form plus HTMX attributes for one POST action.
+
+ACTION-PREFIX is validated as a local route prefix. COMPONENT-SEGMENT and
+ACTION-SEGMENT are percent-encoded independently before they are joined, so a
+slash contained in either segment cannot become route structure."
+  (let* ((url (action-url action-prefix component-segment action-segment))
+         (native (list :action url :method "post"))
+         (htmx
+           (if vals-supplied-p
+               (hx-attrs :post url :target target :swap swap :vals vals :nonce nonce)
+               (hx-attrs :post url :target target :swap swap :nonce nonce))))
+    (merge-html-attrs native htmx)))
+
+(defun action-descriptor-for-symbol (component action)
+  "Return COMPONENT's exact static descriptor identified by Lisp ACTION symbol."
+  (unless (symbolp action)
+    (invalid-htmx-attribute :invalid-action-designator))
+  (let* ((class-name (class-name (class-of component)))
+         (descriptor
+           (find action
+                 (clog-action:list-actions :component-class class-name)
+                 :key #'clog-action:action-descriptor-symbol
+                 :test #'eq)))
+    (unless descriptor
+      (invalid-htmx-attribute :unknown-component-action))
+    descriptor))
+
+(defun component-action-attributes
+    (component action context &key (target nil target-supplied-p)
+                                  (swap nil swap-supplied-p))
+  "Project COMPONENT/ACTION/CONTEXT metadata into safe progressive form attrs.
+
+The static action descriptor owns the external route name. Application
+configuration owns the action prefix and default swap. The component root owns
+the default target. In strict CSP mode the render context's request-derived
+nonce is mandatory and is copied into `hx-nonce`."
+  (check-type component clog-component:component)
+  (check-type context clog-render:render-context)
+  (let* ((descriptor (action-descriptor-for-symbol component action))
+         (allowed-methods
+           (clog-action:action-descriptor-allowed-methods descriptor))
+         (application (clog-render:render-context-application context)))
+    (unless (member :post allowed-methods :test #'eq)
+      (invalid-htmx-attribute :component-action-does-not-allow-post))
+    (unless application
+      (invalid-htmx-attribute :render-application-required))
+    (let* ((configuration
+             (clog-hypermedia:application-configuration application))
+           (strict-csp-p
+             (clog-hypermedia:configuration-strict-csp-p configuration))
+           (nonce (and strict-csp-p
+                       (clog-render:render-context-csp-nonce context)))
+           (resolved-target
+             (if target-supplied-p
+                 target
+                 (format nil "#~A" (clog-render:component-dom-id component))))
+           (resolved-swap
+             (if swap-supplied-p
+                 swap
+                 (clog-hypermedia:configuration-default-swap configuration))))
+      (when (and strict-csp-p (null nonce))
+        (invalid-htmx-attribute :strict-csp-nonce-required))
+      (action-attrs
+       (clog-hypermedia:configuration-action-prefix configuration)
+       (clog-component:component-id component)
+       (clog-action:action-descriptor-external-name descriptor)
+       :target resolved-target
+       :swap resolved-swap
+       :nonce nonce))))
 
 (defparameter +no-js-flash-session-key+ "_clog_flash"
   "Serializable one-shot flash-message key owned by the no-JavaScript fallback.")
