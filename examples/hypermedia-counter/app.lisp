@@ -65,6 +65,29 @@ form is stamped with the request nonce required by the vendored hx-csp runtime."
             :strict-csp-p t)))
     application))
 
+(defun adapt-counter-clack-response (response)
+  "Adapt string Clack bodies to chunk lists at the real-server example edge.
+
+HM-011 deliberately keeps the Hypermedia response abstraction independent of
+server-specific writer conventions. Hunchentoot's Clack writer accepts chunk
+lists, byte vectors, pathnames or NIL, but not a bare string body. Preserve all
+status and header semantics while wrapping only bare string bodies."
+  (if (and (consp response)
+           (consp (cdr response))
+           (consp (cddr response))
+           (stringp (third response)))
+      (list (first response)
+            (second response)
+            (list (third response)))
+      response))
+
+(defun make-counter-clack-handler (application)
+  "Return the real-server Clack handler for APPLICATION with edge adaptation."
+  (let ((handler (clog-hypermedia:as-clack-app application)))
+    (lambda (environment)
+      (adapt-counter-clack-response
+       (funcall handler environment)))))
+
 (defclass counter-server ()
   ((application
     :initarg :application
@@ -133,7 +156,7 @@ explicitly."
          (port (resolve-counter-port host port))
          (handler
            (clack:clackup
-            (clog-hypermedia:as-clack-app application)
+            (make-counter-clack-handler application)
             :debug nil
             :server server
             :address host
