@@ -61,14 +61,14 @@
 (test invalidation/transaction/nested-transactions-share-the-outer-dirty-set
   (let ((a (hm-034-state-component #x3403))
         (b (hm-034-state-component #x3404))
+        (context (hm-034-request "nested"))
         (after-inner-a nil)
         (after-inner-b nil))
     (is (eq :outer-result
-            (clog-hypermedia:with-ui-transaction ((hm-034-request "nested"))
+            (clog-hypermedia:with-ui-transaction (context)
               (clog-hypermedia:invalidate-component a)
               (is (eq :inner-result
-                      (clog-hypermedia:with-ui-transaction
-                          ((hm-034-request "nested"))
+                      (clog-hypermedia:with-ui-transaction (context)
                         (clog-hypermedia:invalidate-component b)
                         (clog-hypermedia:invalidate-component a)
                         :inner-result)))
