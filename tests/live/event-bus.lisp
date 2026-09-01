@@ -231,7 +231,8 @@
                         do (clog-live:publish-event bus :race index))
                 (error (condition)
                   (bordeaux-threads:with-lock-held (failure-lock)
-                    (setf failure condition)))))
+                    (unless failure
+                      (setf failure condition))))))
             :name "lv041-race-publisher"))
          (workers
            (loop repeat 4
@@ -247,11 +248,12 @@
                               for subscription =
                                 (clog-live:subscribe bus :race :queue queue)
                               do (clog-live:unsubscribe subscription)
-                                 (is-true
-                                  (clog-live:subscription-closed-p subscription)))
+                                 (unless (clog-live:subscription-closed-p subscription)
+                                   (error "Subscription remained open after unsubscribe.")))
                       (error (condition)
                         (bordeaux-threads:with-lock-held (failure-lock)
-                          (setf failure condition)))))
+                          (unless failure
+                            (setf failure condition))))))
                   :name "lv041-race-subscriber"))))
     (dolist (thread workers)
       (bordeaux-threads:join-thread thread))
