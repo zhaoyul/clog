@@ -356,6 +356,42 @@ an explicit HTTP 204 no-content response; a non-empty result contains only
 ;;;; HM-033 typed action-result contract and response mapping              ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defpackage #:clog-action
+  (:export
+   #:invalid-action-result
+   #:action-result #:action-result-p #:make-action-result
+   #:action-result-primary-component
+   #:action-result-invalidated-components
+   #:action-result-effects #:action-result-response-headers
+   #:action-result-push-url #:action-result-replace-url
+   #:action-result-redirect-url #:action-result-flash #:action-result-status
+   #:render-self #:render-components #:no-render
+   #:redirect-to #:push-url #:replace-url #:with-effect))
+
+(defpackage #:clog-hypermedia
+  (:import-from #:clog-action
+                #:invalid-action-result
+                #:action-result #:action-result-p #:make-action-result
+                #:action-result-primary-component
+                #:action-result-invalidated-components
+                #:action-result-effects #:action-result-response-headers
+                #:action-result-push-url #:action-result-replace-url
+                #:action-result-redirect-url #:action-result-flash
+                #:action-result-status
+                #:render-self #:render-components #:no-render
+                #:redirect-to #:push-url #:replace-url #:with-effect)
+  (:export
+   #:invalid-action-result
+   #:action-result #:action-result-p #:make-action-result
+   #:action-result-primary-component
+   #:action-result-invalidated-components
+   #:action-result-effects #:action-result-response-headers
+   #:action-result-push-url #:action-result-replace-url
+   #:action-result-redirect-url #:action-result-flash #:action-result-status
+   #:render-self #:render-components #:no-render
+   #:redirect-to #:push-url #:replace-url #:with-effect
+   #:action-result->response))
+
 (in-package #:clog-action)
 
 (defparameter +action-result-reserved-response-headers+
@@ -394,7 +430,6 @@ an explicit HTTP 204 no-content response; a non-empty result contains only
              (error 'invalid-action-result :reason :invalid-response-header-name))
            (when (member name +action-result-reserved-response-headers+ :test #'eq)
              (error 'invalid-action-result :reason :reserved-response-header)))
-  ;; The HTTP kernel remains the canonical header syntax and CRLF validator.
   (clog-http:make-response :headers headers :body "" :kind :html)
   (loop for (name value) on headers by #'cddr
         append (list name (copy-action-result-value value))))
@@ -456,11 +491,7 @@ an explicit HTTP 204 no-content response; a non-empty result contains only
   t)
 
 (defun validate-action-result (result)
-  "Revalidate RESULT at the response sink and return RESULT.
-
-This deliberately rechecks internal slots because Common Lisp callers can reach
-implementation accessors with double-colon syntax even though the public API is
-defensive."
+  "Revalidate RESULT at the response sink and return RESULT."
   (unless (action-result-p result)
     (error 'invalid-action-result :reason :action-result-required))
   (let* ((primary
@@ -493,10 +524,7 @@ defensive."
     (&key (primary-component :current)
           invalidated-components effects response-headers
           push-url replace-url redirect-url flash (status 200))
-  "Create a validated defensive HM-033 ACTION-RESULT value.
-
-The result contains only declarative response intent. URL origin validation,
-rendering and HTMX header encoding occur later in ACTION-RESULT->RESPONSE."
+  "Create a validated defensive HM-033 ACTION-RESULT value."
   (let* ((primary (validate-action-result-primary primary-component))
          (partials (validate-action-result-partials invalidated-components))
          (effects (validate-action-result-effects effects))
@@ -575,6 +603,10 @@ rendering and HTMX header encoding occur later in ACTION-RESULT->RESPONSE."
   "Declare that the current action component should be rendered."
   (make-action-result))
 
+(defun no-render ()
+  "Declare successful action completion with no response body."
+  (make-action-result :primary-component nil :status 204))
+
 (defun render-components (&rest components)
   "Declare a pure multi-target partial response for COMPONENTS."
   (if components
@@ -582,10 +614,6 @@ rendering and HTMX header encoding occur later in ACTION-RESULT->RESPONSE."
        :primary-component nil
        :invalidated-components components)
       (no-render)))
-
-(defun no-render ()
-  "Declare successful action completion with no response body."
-  (make-action-result :primary-component nil :status 204))
 
 (defun redirect-to (url)
   "Declare an HTMX same-origin redirect with no fragment body."
@@ -647,7 +675,7 @@ rendering and HTMX header encoding occur later in ACTION-RESULT->RESPONSE."
       ((eq primary :current) current-component)
       ((eq primary current-component) current-component)
       (t
-       (error 'clog-action::invalid-action-result
+       (error 'clog-action:invalid-action-result
               :reason :foreign-primary-component)))))
 
 (defun hm-033-subject-component-id (subject)
@@ -728,12 +756,7 @@ rendering and HTMX header encoding occur later in ACTION-RESULT->RESPONSE."
 
 (defun action-result->response
     (result application current-component request-context)
-  "Map declarative ACTION-RESULT to one validated framework RESPONSE.
-
-Business actions never construct Clack responses. Rendering is delegated to the
-existing component and HM-032 partial renderers; navigation and browser events
-are delegated to typed HTMX response-header helpers so same-origin and JSON
-encoding policy has one authority."
+  "Map declarative ACTION-RESULT to one validated framework RESPONSE."
   (clog-action::validate-action-result result)
   (check-type application hypermedia-application)
   (check-type current-component clog-component:component)
@@ -746,36 +769,3 @@ encoding policy has one authority."
 (defun hm-025-response-from-result (result application component context)
   "HM-033 bridge: map the expanded typed result through the unified response sink."
   (action-result->response result application component context))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; HM-025 deliberately kept ACTION-RESULT internal. HM-033 promotes the data
-  ;; contract through the public facade without broadening CLOG-ACTION's own
-  ;; external package surface.
-  (let ((action-package (find-package "CLOG-ACTION"))
-        (facade-package (find-package "CLOG-HYPERMEDIA")))
-    (dolist (name '("INVALID-ACTION-RESULT"
-                    "ACTION-RESULT"
-                    "ACTION-RESULT-P"
-                    "MAKE-ACTION-RESULT"
-                    "ACTION-RESULT-PRIMARY-COMPONENT"
-                    "ACTION-RESULT-INVALIDATED-COMPONENTS"
-                    "ACTION-RESULT-EFFECTS"
-                    "ACTION-RESULT-RESPONSE-HEADERS"
-                    "ACTION-RESULT-PUSH-URL"
-                    "ACTION-RESULT-REPLACE-URL"
-                    "ACTION-RESULT-REDIRECT-URL"
-                    "ACTION-RESULT-FLASH"
-                    "ACTION-RESULT-STATUS"
-                    "RENDER-SELF"
-                    "RENDER-COMPONENTS"
-                    "NO-RENDER"
-                    "REDIRECT-TO"
-                    "PUSH-URL"
-                    "REPLACE-URL"
-                    "WITH-EFFECT"))
-      (let ((symbol (or (find-symbol name action-package)
-                        (intern name action-package))))
-        (shadowing-import symbol facade-package)
-        (export symbol facade-package)))
-    (export (intern "ACTION-RESULT->RESPONSE" facade-package)
-            facade-package)))
