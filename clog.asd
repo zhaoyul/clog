@@ -145,7 +145,8 @@
                (:file "render-context")
                (:file "render")
                (:file "htmx")
-               (:file "partials")))
+               (:file "partials")
+               (:file "invalidation")))
 
 (asdf:defsystem #:clog/live
   :description "Experimental CLOG 3 Live Runtime package boundary"
@@ -210,6 +211,8 @@
                              (:file "htmx-attrs")
                              (:file "partials")
                              (:file "action-result")
+                             (:file "invalidation")
+                             (:file "transactions")
                              (:file "root-contract")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op

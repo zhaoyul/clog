@@ -32,7 +32,8 @@
       "render-context"
       "render"
       "htmx"
-      "partials")
+      "partials"
+      "invalidation")
      ("CLOG-HTTP"
       "CLOG-ROUTER"
       "CLOG-COMPONENT"
@@ -40,6 +41,7 @@
       "CLOG-RENDER"
       "CLOG-HTMX"
       "CLOG-PARTIALS"
+      "CLOG-INVALIDATION"
       "CLOG-SESSION"
       "CLOG-HYPERMEDIA"))
     ("clog/live"
@@ -484,6 +486,13 @@
     "RENDER-PARTIALS")
   "Typed HTMX 4 multi-target partial descriptor and renderer surface after HM-032.")
 
+(defparameter +invalidation-api-export-snapshot+
+  '("INVALIDATE-COMPONENT"
+    "UI-TRANSACTION-ERROR"
+    "UI-TRANSACTION-ERROR-REASON"
+    "WITH-UI-TRANSACTION")
+  "UI transaction and dirty invalidation surface after HM-034.")
+
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
                 (copy-list +router-api-export-snapshot+)
@@ -495,9 +504,10 @@
                 (copy-list +component-store-api-export-snapshot+)
                 (copy-list +session-integration-public-api-export-snapshot+)
                 (copy-list +htmx-api-export-snapshot+)
-                (copy-list +partials-api-export-snapshot+))
+                (copy-list +partials-api-export-snapshot+)
+                (copy-list +invalidation-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-033.")
+  "Exact combined public Hypermedia facade surface after HM-034.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -572,7 +582,7 @@
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-033.")
+  "Facade export snapshots after HM-034.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -582,11 +592,12 @@
     ("CLOG-RENDER" ,+render-api-export-snapshot+)
     ("CLOG-HTMX" ,+htmx-api-export-snapshot+)
     ("CLOG-PARTIALS" ,+partials-api-export-snapshot+)
+    ("CLOG-INVALIDATION" ,+invalidation-api-export-snapshot+)
     ("CLOG-SESSION" ,+session-api-export-snapshot+)
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-033.")
+  "Internal package export snapshots after HM-034.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
