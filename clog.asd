@@ -156,7 +156,8 @@
                #:websocket-driver)
   :serial t
   :pathname "source/live/"
-  :components ((:file "packages")))
+  :components ((:file "packages")
+               (:file "queue")))
 
 (asdf:defsystem #:clog/presentations2
   :description "Experimental CLOG Presentations 2 package boundary"
@@ -215,6 +216,8 @@
                              (:file "transactions")
                              (:file "component-tree")
                              (:file "root-contract")))
+               (:module "live"
+                :components ((:file "queue")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clog/hypermedia-counter-tests")))

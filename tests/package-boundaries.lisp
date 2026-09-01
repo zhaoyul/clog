@@ -46,8 +46,8 @@
       "CLOG-HYPERMEDIA"))
     ("clog/live"
      ("clog/hypermedia" "websocket-driver")
-     ("packages")
-     ("CLOG-SSE" "CLOG-WS" "CLOG-EFFECT" "CLOG-LIVE"))
+     ("packages" "queue")
+     ("CLOG-LIVE-QUEUE" "CLOG-SSE" "CLOG-WS" "CLOG-EFFECT" "CLOG-LIVE"))
     ("clog/presentations2"
      ("clog/hypermedia")
      ("packages")
@@ -502,6 +502,26 @@
     "WITH-UI-TRANSACTION")
   "UI transaction and dirty invalidation surface after HM-034.")
 
+(defparameter +live-queue-api-export-snapshot+
+  '("BOUNDED-QUEUE"
+    "CANCEL-QUEUE-CANCELLATION"
+    "CLOSE-QUEUE"
+    "DEQUEUE"
+    "ENQUEUE"
+    "INVALID-QUEUE-CONFIGURATION"
+    "MAKE-BOUNDED-QUEUE"
+    "MAKE-QUEUE-CANCELLATION"
+    "QUEUE-CANCELLATION"
+    "QUEUE-CANCELLATION-CANCELLED-P"
+    "QUEUE-CAPACITY"
+    "QUEUE-CLOSED-P"
+    "QUEUE-ERROR"
+    "QUEUE-ERROR-REASON"
+    "QUEUE-OVERFLOW-POLICY"
+    "QUEUE-RESYNC-MARKER"
+    "QUEUE-SIZE")
+  "Bounded Live mailbox and cancellation surface after LV-040.")
+
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
                 (copy-list +router-api-export-snapshot+)
@@ -589,10 +609,10 @@
 
 (defparameter +public-facade-export-contracts+
   `(("CLOG-HYPERMEDIA" ,+hypermedia-api-export-snapshot+)
-    ("CLOG-LIVE" nil)
+    ("CLOG-LIVE" ,+live-queue-api-export-snapshot+)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-035.")
+  "Facade export snapshots after LV-040.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -604,10 +624,11 @@
     ("CLOG-PARTIALS" ,+partials-api-export-snapshot+)
     ("CLOG-INVALIDATION" ,+invalidation-api-export-snapshot+)
     ("CLOG-SESSION" ,+session-api-export-snapshot+)
+    ("CLOG-LIVE-QUEUE" ,+live-queue-api-export-snapshot+)
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-035.")
+  "Internal package export snapshots after LV-040.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
