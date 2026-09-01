@@ -138,7 +138,7 @@ class DriverServer:
         capabilities = {
             "browserName": "chrome",
             "pageLoadStrategy": "normal",
-            "goog:loggingPrefs": {"performance": "ALL"},
+            "goog:loggingPrefs": {"performance": "ALL", "browser": "ALL"},
             "goog:chromeOptions": options,
         }
         value = self.request(
@@ -177,6 +177,9 @@ class Session:
     def current_url(self) -> str:
         return str(self.request("GET", "/url"))
 
+    def execute(self, script: str, args=None):
+        return self.request("POST", "/execute/sync", {"script": script, "args": args or []})
+
     def find(self, selector: str, using: str = "css selector") -> str:
         value = self.request("POST", "/element", {"using": using, "value": selector})
         return str(value[ELEMENT_KEY])
@@ -214,13 +217,16 @@ class Session:
             time.sleep(0.05)
         raise AssertionError(f"Expected {selector} text {expected!r}, last value {last!r}")
 
-    def performance_logs(self) -> list[dict]:
+    def logs(self, log_type: str) -> list[dict]:
         try:
-            entries = self.request("POST", "/se/log", {"type": "performance"})
+            entries = self.request("POST", "/se/log", {"type": log_type})
         except WebDriverFailure:
-            entries = self.request("POST", "/log", {"type": "performance"})
+            entries = self.request("POST", "/log", {"type": log_type})
+        return list(entries or [])
+
+    def performance_logs(self) -> list[dict]:
         messages = []
-        for entry in entries or []:
+        for entry in self.logs("performance"):
             try:
                 outer = json.loads(entry["message"])
                 message = outer.get("message", outer)
@@ -229,6 +235,9 @@ class Session:
             except (KeyError, TypeError, ValueError):
                 continue
         return messages
+
+    def browser_logs(self) -> list[dict]:
+        return self.logs("browser")
 
 
 def assert_counter(session: Session, expected: str) -> None:
@@ -251,9 +260,35 @@ def assert_local_htmx(session: Session, base_url: str) -> None:
     )
 
 
+def csp_diagnostics(session: Session) -> dict:
+    dom = session.execute(
+        """
+        const scripts = Array.from(document.querySelectorAll('script')).map((script) => ({
+          src: script.getAttribute('src'),
+          nonceAttribute: script.getAttribute('nonce'),
+          nonceProperty: script.nonce
+        }));
+        const forms = Array.from(document.querySelectorAll('form')).map((form) => ({
+          outerHTML: form.outerHTML,
+          hxNonce: form.getAttribute('hx-nonce'),
+          hxPost: form.getAttribute('hx-post'),
+          hxTarget: form.getAttribute('hx-target'),
+          hxSwap: form.getAttribute('hx-swap')
+        }));
+        return {scripts, forms, readyState: document.readyState};
+        """
+    )
+    return {"dom": dom, "browserLogs": session.browser_logs()}
+
+
 def assert_csp_authorized_htmx_forms(session: Session) -> None:
     forms = session.find_all("form[hx-post][hx-target][hx-swap][hx-nonce]")
-    assert len(forms) == 3, f"Expected 3 CSP-authorized HTMX forms, found {len(forms)}"
+    if len(forms) != 3:
+        diagnostic = csp_diagnostics(session)
+        raise AssertionError(
+            "Expected 3 CSP-authorized HTMX forms, found "
+            f"{len(forms)}; diagnostics={json.dumps(diagnostic, ensure_ascii=False)}"
+        )
     for form in forms:
         assert session.attribute(form, "hx-nonce"), "HTMX form is missing hx-nonce"
         assert session.attribute(form, "hx-swap") == "outerMorph"
