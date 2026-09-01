@@ -456,11 +456,11 @@ for debugger integration."
      (list
       (make-request-id-middleware configuration)
       (make-access-log-middleware configuration)
+      (make-csp-nonce-middleware configuration)
       (make-security-headers-middleware configuration)
       (make-error-boundary-middleware configuration)
       (clog-session:make-request-body-limit-middleware
        (configuration-request-body-limit-bytes configuration))
-      (make-csp-nonce-middleware configuration)
       (clog-render:make-static-asset-middleware
        (configuration-static-prefix configuration)
        (configuration-static-root configuration))
