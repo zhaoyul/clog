@@ -38,6 +38,7 @@
 hx-post="/_clog/action/<component-id>/<action>"
 hx-target="#<component-id>"
 hx-swap="outerMorph"
+hx-nonce="<request-csp-nonce>"
 ```
 
 提交后服务器执行 action, 提交 component revision, 重新 render 当前 component, 然后 HTMX 只更新 Counter root. 页面 URL 不发生导航.
@@ -76,6 +77,8 @@ Lack session cookie
 
 这些文件来自仓库 `static-files/vendor/htmx/4.0.0/`.
 
+HTMX 4 的 `hx-csp` 扩展在 strict CSP 下会校验 HTMX 元素上的 nonce. 因此 Counter 不只给 script 标签加 CSP nonce, 还把每个请求上下文的 nonce 写入所有带 `hx-*` 的 form 的 `hx-nonce` 属性. Action fragment 使用 action 请求自己的 response nonce, `hx-csp` 再根据 response CSP header 将 fragment nonce 安全映射回当前页面 nonce. 缺少或不匹配的 nonce 会 fail closed, HTMX 属性不会被执行.
+
 可以用 curl 检查页面和本地静态资源. 将下面端口替换为 REPL 返回值:
 
 ```bash
@@ -83,7 +86,7 @@ curl -i http://127.0.0.1:49152/counter
 curl -i http://127.0.0.1:49152/_clog/static/vendor/htmx/4.0.0/htmx.min.js
 ```
 
-响应页面应包含 `Content-Security-Policy`, `Cache-Control: no-store`, request id, CSRF meta 标签以及本地 HTMX `<script>`.
+响应页面应包含 `Content-Security-Policy`, `Cache-Control: no-store`, request id, CSRF meta 标签, `hx-nonce` 以及本地 HTMX `<script>`.
 
 ## 5. Component 与 Action
 
@@ -148,13 +151,14 @@ python tests/browser/counter.spec.py
 
 Browser acceptance 同时执行:
 
-1. JavaScript-on HTMX action 不进行整页导航.
-2. Action request 带 `HX-Request: true`.
-3. Counter root ID 在 `outerMorph` 更新后保持稳定.
-4. 两个 BrowserContext 的 state 相互隔离.
-5. JavaScript-off 下 increment/decrement/reset 全部可用.
-6. JavaScript-off mutation 使用 PRG, reload 不重复 POST.
-7. HTMX script 来自 same-origin vendored path.
+1. JavaScript-on 页面上的 HTMX forms 通过 `hx-nonce` 获得 strict-CSP 授权.
+2. JavaScript-on HTMX action 不进行整页导航.
+3. Action request 带 `HX-Request: true`.
+4. Counter root ID 在 `outerMorph` 更新后保持稳定.
+5. 两个 BrowserContext 的 state 相互隔离.
+6. JavaScript-off 下 increment/decrement/reset 全部可用.
+7. JavaScript-off mutation 使用 PRG, reload 不重复 POST.
+8. HTMX script 来自 same-origin vendored path.
 
 ## 8. 当前边界
 

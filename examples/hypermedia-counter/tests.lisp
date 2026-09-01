@@ -137,6 +137,7 @@
     (is (= 3 (count-substring "hx-post=\"/_clog/action/" body)))
     (is (= 3 (count-substring "hx-swap=\"outerMorph\"" body)))
     (is (= 3 (count-substring "hx-target=\"#clog-c-" body)))
+    (is (= 3 (count-substring "hx-nonce=\"" body)))
     (is (= 3 (count-substring "method=\"post\"" body)))
     (is (search "name=\"_csrf_token\"" body))
     (is (search "data-clog-component=\"true\"" body))

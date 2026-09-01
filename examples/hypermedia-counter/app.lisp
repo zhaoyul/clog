@@ -10,7 +10,8 @@
 The ordinary METHOD/ACTION contract remains sufficient when JavaScript is
 unavailable. With the vendored HTMX runtime active the same form posts through
 HTMX, targets the stable component root and uses the application's configured
-swap policy, which is outerMorph for this example."
+swap policy, which is outerMorph for this example. Under strict CSP every HTMX
+form is stamped with the request nonce required by the vendored hx-csp runtime."
   (let* ((request (clog-hypermedia:render-context-request context))
          (application (clog-hypermedia:render-context-application context))
          (configuration
@@ -18,6 +19,7 @@ swap policy, which is outerMorph for this example."
          (url (action-url component action context))
          (target (format nil "#~A" (clog-hypermedia:component-dom-id component)))
          (csrf (clog-hypermedia:csrf-token-for request))
+         (nonce (clog-hypermedia:request-csp-nonce request))
          (revision (clog-hypermedia:component-revision component)))
     (spinneret:with-html-string
       (:form :method "post"
@@ -25,6 +27,7 @@ swap policy, which is outerMorph for this example."
        :hx-post url
        :hx-target target
        :hx-swap (clog-hypermedia:configuration-default-swap configuration)
+       :hx-nonce nonce
        (:input :type "hidden" :name "_csrf_token" :value csrf)
        (:input :type "hidden" :name "_clog_revision"
                :value (format nil "~D" revision))

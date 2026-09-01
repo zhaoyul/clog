@@ -35,6 +35,14 @@ def assert_local_htmx(page):
     assert urlparse(src).scheme == "", f"HTMX must be same-origin, got {src!r}"
 
 
+def assert_csp_authorized_htmx_forms(page):
+    forms = page.locator("form[hx-post][hx-target][hx-swap][hx-nonce]")
+    expect(forms).to_have_count(3)
+    for index in range(3):
+        nonce = forms.nth(index).get_attribute("hx-nonce")
+        assert nonce, "Strict-CSP HTMX form is missing its request nonce"
+
+
 def exercise_js_on(browser):
     context_a = browser.new_context(java_script_enabled=True)
     context_b = browser.new_context(java_script_enabled=True)
@@ -42,6 +50,7 @@ def exercise_js_on(browser):
         page_a = open_counter(context_a)
         page_b = open_counter(context_b)
         assert_local_htmx(page_a)
+        assert_csp_authorized_htmx_forms(page_a)
 
         action_requests = []
 
@@ -55,6 +64,7 @@ def exercise_js_on(browser):
 
         page_a.get_by_role("button", name="+1", exact=True).click()
         expect(counter_value(page_a)).to_have_text("1")
+        assert_csp_authorized_htmx_forms(page_a)
 
         assert page_a.url == initial_url, "HTMX action unexpectedly navigated the page"
         assert page_a.locator("section.counter").get_attribute("id") == root_id
