@@ -8,7 +8,7 @@
 
 (asdf:defsystem #:clog
   :description "CLOG - The Common Lisp Omnificent GUI"
-  :author "David Botton <botton@botton.com>"
+  :author "David Botton <david@botton.com>"
   :license  "BSD"
   :version "2.2"
   :serial t
