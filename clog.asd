@@ -198,6 +198,7 @@
                (:module "hypermedia"
                 :components ((:file "request")
                              (:file "response")
+                             (:file "htmx")
                              (:file "router")
                              (:file "application")
                              (:file "assets")
