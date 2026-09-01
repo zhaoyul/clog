@@ -10,14 +10,13 @@
 
 (defmethod clog-hypermedia:render-component
     ((component hm-034-state-component) context)
-  (declare (ignore context))
   (spinneret:with-html-string
-    (:section :id (clog-hypermedia:component-id component)
+    (:section :attrs (clog-hypermedia:component-root-attributes component context)
               (:span (hm-034-label component)))))
 
 (defun hm-034-id (number)
   "Return one deterministic valid component id for HM-034 fixtures."
-  (format nil "clog-c-~32,'0x" number))
+  (string-downcase (format nil "clog-c-~32,'0x" number)))
 
 (defun hm-034-state-component
     (number &key parent-id (label (format nil "component-~D" number)))
