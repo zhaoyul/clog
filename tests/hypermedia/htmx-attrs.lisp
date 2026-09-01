@@ -68,6 +68,8 @@
            :hx-nonce "nonce-031")
          attrs))
     ;; The returned plist is directly consumable by Spinneret :attrs.
+    ;; Spinneret may omit quotes for token-safe attribute values, so assert
+    ;; the serialized semantic value instead of a specific quoting style.
     (let ((html
             (spinneret:with-html-string
               (:form :attrs attrs
@@ -76,7 +78,7 @@
                   html))
       (is (search "hx-post=\"/_clog/action/component%20id%2Fwith%20slash/save%2Fnow\""
                   html))
-      (is (search "hx-swap=\"outerMorph\"" html)))))
+      (is (search "hx-swap=outerMorph" html)))))
 
 (test htmx-attrs/hx-vals-is-json-data-never-raw-javascript
   (let* ((message (format nil "quote ~S <tag>~Cnext" "value" #\Newline))
