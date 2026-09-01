@@ -429,16 +429,22 @@
   "Exact internal component core and store surface after HM-021.")
 
 (defparameter +htmx-api-export-snapshot+
-  '("HX-CURRENT-URL"
+  '("ACTION-ATTRS"
+    "COMPONENT-ACTION-ATTRIBUTES"
+    "HX-ATTRS"
+    "HX-CURRENT-URL"
     "HX-TARGET"
     "HX-TRIGGER"
+    "INVALID-HTMX-ATTRIBUTE"
+    "INVALID-HTMX-ATTRIBUTE-REASON"
+    "MERGE-HTML-ATTRS"
     "SET-HX-LOCATION"
     "SET-HX-PUSH-URL"
     "SET-HX-REDIRECT"
     "SET-HX-REFRESH"
     "SET-HX-REPLACE-URL"
     "SET-HX-TRIGGER")
-  "Typed HTMX request/response adapter surface fixed by HM-030.")
+  "Typed HTMX request/response and safe attribute helper surface after HM-031.")
 
 (defparameter +hypermedia-api-export-snapshot+
   (sort (append (copy-list +http-api-export-snapshot+)
@@ -451,7 +457,7 @@
                 (copy-list +session-integration-public-api-export-snapshot+)
                 (copy-list +htmx-api-export-snapshot+))
         #'string<)
-  "Exact combined public Hypermedia facade surface after HM-030.")
+  "Exact combined public Hypermedia facade surface after HM-031.")
 
 (defparameter +session-api-export-snapshot+
   '(
@@ -526,7 +532,7 @@
     ("CLOG-LIVE" nil)
     ("CLOG-PRESENTATIONS2" nil)
     ("CLOG-COMPAT" nil))
-  "Facade export snapshots after HM-030.")
+  "Facade export snapshots after HM-031.")
 
 (defparameter +internal-export-contracts+
   `(("CLOG-HTTP" ,+http-api-export-snapshot+)
@@ -539,7 +545,7 @@
     ("CLOG-SSE" nil)
     ("CLOG-WS" nil)
     ("CLOG-EFFECT" nil))
-  "Internal package export snapshots after HM-030.")
+  "Internal package export snapshots after HM-031.")
 
 (defparameter +internal-package-names+
   (mapcar #'first +internal-export-contracts+)
