@@ -207,6 +207,7 @@
                              (:file "component-store")
                              (:file "render")
                              (:file "htmx-attrs")
+                             (:file "partials")
                              (:file "root-contract")))
                (:file "package-boundaries"))
   :in-order-to ((asdf:test-op
